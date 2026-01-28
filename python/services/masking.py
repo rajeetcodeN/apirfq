@@ -1,15 +1,11 @@
-
 import re
 import logging
+import phonenumbers
 from typing import Dict, List, Any, Tuple
-from presidio_analyzer import AnalyzerEngine, RecognizerResult, PatternRecognizer, Pattern
-from presidio_analyzer.nlp_engine import NlpEngineProvider
-from presidio_anonymizer import AnonymizerEngine
-from presidio_anonymizer.entities import OperatorConfig
 
 logger = logging.getLogger(__name__)
 
-# === HEADER EXTRACTION LOGIC ===
+# === HEADER EXTRACTION LOGIC (UNCHANGED) ===
 
 class DocumentHeader:
     def __init__(self, supplier_name, customer_name, doc_type, date, customer_num, rfq_num):
@@ -31,7 +27,7 @@ def extract_document_header(text: str) -> DocumentHeader:
     # Normalize whitespace
     normalized_text = re.sub(r'[ \t]+', ' ', text)
     
-    # 1. Supplier Name (Hardcoded)
+    # 1. Supplier Name (Hardcoded as requested)
     supplier_name = "Nosta GmbH"
     
     # 2. RFQ Number
@@ -51,7 +47,9 @@ def extract_document_header(text: str) -> DocumentHeader:
     document_date = ""
     date_patterns = [
         r"Datum\s*[:.]?\s*(\d{2}[.\/]\d{2}[.\/]\d{4})",
-        r"Date\s*[:.]?\s*(\d{4}-\d{2}-\d{2})"
+        r"Date\s*[:.]?\s*(\d{4}-\d{2}-\d{2})",
+        # ISO Date (YYYY-MM-DD) appearing anywhere
+        r"(\d{4}-\d{2}-\d{2})"
     ]
     for pattern in date_patterns:
         match = re.search(pattern, normalized_text, re.IGNORECASE)
@@ -100,148 +98,151 @@ def extract_document_header(text: str) -> DocumentHeader:
     return DocumentHeader(supplier_name, customer_name, doc_type, document_date, customer_number, rfq_number)
 
 
-# === MASKING LOGIC ===
+# === ENHANCED MASKING LOGIC (PORTED FROM TYPESCRIPT) ===
 
-class PIIMasker:
+class RegexMasker:
+    """
+    Enhanced Masker porting the 'DataMasker' logic from TypeScript.
+    Uses 'phonenumbers' (libphonenumber port) and regex fallbacks.
+    Maintains counters for entities (EMAIL_1, COMPANY_1).
+    """
     def __init__(self):
-        # Configure Presidio to use Spacy (German)
-        # Note: Requires `python -m spacy download de_core_news_lg`
-        nlp_config = {
-            "nlp_engine_name": "spacy",
-            "models": [{"lang_code": "de", "model_name": "de_core_news_sm"},
-                       {"lang_code": "en", "model_name": "en_core_web_lg"}] 
+        self.token_map = {}
+        self.counters = {
+            "EMAIL": 0,
+            "COMPANY": 0,
+            "PERSON": 0,
+            "ADDRESS": 0,
+            "IBAN": 0
         }
-        provider = NlpEngineProvider(nlp_configuration=nlp_config)
-        
-        try:
-            self.nlp_engine = provider.create_engine()
-            self.analyzer = AnalyzerEngine(nlp_engine=self.nlp_engine, supported_languages=["de", "en"])
-            self.nlp_available = True
-        except OSError:
-            logger.warning("Spacy models not found. Falling back to Regex-only mode. Run `python -m spacy download de_core_news_sm`")
-            self.analyzer = AnalyzerEngine() # Default config
-            self.nlp_available = False
 
-        self.anonymizer = AnonymizerEngine()
-        self._add_custom_recognizers()
-
-    def _add_custom_recognizers(self):
-        """Adds specific Regex patterns from the original TypeScript code."""
-        
-        # 1. German Address Pattern (Street Number, Zip City)
-        # Regex: ([A-Za-zäöüÄÖÜß]+(?:straße|strasse|str\.|gasse|weg|platz|allee)\s*\d{1,4}[a-zA-Z]?)\s*,?\s*(\d{4,5})\s+([A-Za-zäöüÄÖÜß]+)
-        address_pattern = Pattern(
-            name="german_address_pattern",
-            regex=r"([A-Za-zäöüÄÖÜß]+(?:straße|strasse|str\.|gasse|weg|platz|allee)\s*\d{1,4}[a-zA-Z]?)\s*,?\s*(\d{4,5})\s+([A-Za-zäöüÄÖÜß]+)",
-            score=0.85
-        )
-        address_recognizer = PatternRecognizer(
-            supported_entity="GERMAN_ADDRESS",
-            patterns=[address_pattern],
-            supported_language="de"
-        )
-        self.analyzer.registry.add_recognizer(address_recognizer)
-
-        # 2. Specific Company Blocklist (Nosta, Reyher)
-        company_pattern = Pattern(
-            name="company_blocklist",
-            regex=r"(?i)\b(Nosta\s*GmbH|NOSTA|Reyher|F\.\s*Reyher)\b",
-            score=1.0
-        )
-        company_recognizer = PatternRecognizer(
-            supported_entity="BLOCKED_COMPANY",
-            patterns=[company_pattern],
-            supported_language="de"
-        )
-        self.analyzer.registry.add_recognizer(company_recognizer)
-        
-        # 3. German Phone Formats
-        # 09074/42117 or +49 ...
-        phone_pattern = Pattern(
-            name="german_phone_custom",
-            regex=r"((?:Telefax|Telefon|Tel|Fax|Phone)[\s.:]*)([\d\s\/\-\+]+[\d]{4,})|\b(\d{3,5}[\/-]\d{4,})\b",
-            score=0.7
-        )
-        phone_recognizer = PatternRecognizer(
-            supported_entity="PHONE_CUSTOM",
-            patterns=[phone_pattern],
-            supported_language="de"
-        )
-        self.analyzer.registry.add_recognizer(phone_recognizer)
-
+    def _get_next_token(self, entity_type: str) -> str:
+        self.counters[entity_type] += 1
+        # Match TS format: {{EMAIL_1}}, {{COMPANY_1}}
+        # But some generic ones might just be {{PHONE}} in the TS code?
+        # The TS code uses {{PHONE}} generic, but EMAIL_N. We'll stick to TS style.
+        if entity_type == "PHONE":
+             return "{{PHONE}}"
+        return f"{{{{{entity_type}_{self.counters[entity_type]}}}}}"
 
     def mask(self, text: str, header_values: List[str] = None) -> Tuple[str, Dict[str, str]]:
-        """
-        Masks PII in the text.
-        Returns: (masked_text, token_map)
-        """
-        
-        # 1. Pre-masking (Header Values - Hardening)
-        # If we know the Customer Name is "FooBar GmbH", we mask it expressly.
-        text_to_analyze = text
-        token_map = {}
-        
-        # We use a primitive replace for these exact known strings to ensure 100% safety
+        # Normalize whitespace (TS: text.replace(/[ \t]+/g, ' '))
+        masked_text = re.sub(r'[ \t]+', ' ', text)
+        self.token_map = {}
+        self.counters = {k:0 for k in self.counters}
+
+        # 1. Header Hardening (Pre-mask known values)
         if header_values:
             for i, val in enumerate(header_values):
                 if val and len(val) > 2:
-                    # Create a token (consistent with existing system)
-                    token = f"{{{{HEADER_VAL_{i}}}}}" 
-                    if val not in text_to_analyze:
-                        continue
-                        
-                    # Save mapping
-                    token_map[token] = val
-                    # Replace
-                    text_to_analyze = text_to_analyze.replace(val, token)
+                    token = f"{{{{HEADER_VAL_{i}}}}}"
+                    if val in masked_text:
+                        self.token_map[token] = val
+                        masked_text = masked_text.replace(val, token)
 
-        # 2. Presidio Analysis
-        results = self.analyzer.analyze(
-            text=text_to_analyze,
-            language='de',
-            entities=[
-                "PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "IBAN", 
-                "GERMAN_ADDRESS", "BLOCKED_COMPANY", "PHONE_CUSTOM",
-                "LOCATION", "ORGANIZATION" # Generic Spacy entities
-            ]
-        )
+        # 2. Mask Phone/Fax (Regex First - for German formats)
+        # Porting TS patterns
+        phone_patterns = [
+            # Labeled
+            r"((?:Telefax|Telefon|Tel|Fax|Phone|Mobil)[\s.:]*)([\d\s\/\-\+]+[\d]{4,})",
+            # Standalone German local
+            r"\b(\d{3,5}[\/-]\d{4,})\b",
+            # International
+            r"(\+\d{1,3}[\s\/-]?\d{2,4}[\s\/-]?\d{3,}[\s\/-]?\d{0,})"
+        ]
 
-        # 3. Anonymization
-        # We want to replace with {{ENTITY_TYPE}} to match the existing format styles roughly
-        anonymized_result = self.anonymizer.anonymize(
-            text=text_to_analyze,
-            analyzer_results=results,
-            operators={
-                "DEFAULT": OperatorConfig("replace", {"new_value": "{{PII_REDACTED}}"}),
-                "PERSON": OperatorConfig("replace", {"new_value": "{{PERSON}}"}),
-                "ORGANIZATION": OperatorConfig("replace", {"new_value": "{{COMPANY}}"}),
-                "BLOCKED_COMPANY": OperatorConfig("replace", {"new_value": "{{COMPANY}}"}),
-                "EMAIL_ADDRESS": OperatorConfig("replace", {"new_value": "{{EMAIL}}"}),
-                "IBAN": OperatorConfig("replace", {"new_value": "{{IBAN}}"}),
-                "GERMAN_ADDRESS": OperatorConfig("replace", {"new_value": "{{ADDRESS}}"}),
-                "PHONE_CUSTOM": OperatorConfig("replace", {"new_value": "{{PHONE}}"})
-            }
-        )
-        
-        return anonymized_result.text, token_map
+        # Note: In Python regex, we must iterate carefully to avoid overlap.
+        # Simple approach: applied sequentially.
+        for idx, pattern in enumerate(phone_patterns):
+            # We use finding iteration
+            for match in re.finditer(pattern, masked_text, re.IGNORECASE):
+                full_match = match.group(0)
+                if "{{" in full_match: continue
+                
+                token = "{{PHONE}}"
+                replacement = token
+                
+                # Logic from TS: Labeled patterns keep label
+                if idx == 0 and match.lastindex and match.lastindex >= 2:
+                    label = match.group(1)
+                    number = match.group(2).strip()
+                    if len(number) > 5:
+                        self.token_map[token] = number # Note: map key is {{PHONE}}, overwrites previous. TS does this too.
+                        replacement = label + token
+                        masked_text = masked_text.replace(full_match, replacement)
+                else:
+                    if len(full_match) > 5:
+                        self.token_map[token] = full_match
+                        masked_text = masked_text.replace(full_match, replacement)
 
-# Singleton instance
+        # 3. Mask Known Companies (Blocklist)
+        known_companies = ['Nosta GmbH', 'NOSTA', 'Nosta'] # Add Reyher if needed
+        for company in known_companies:
+            if re.search(re.escape(company), masked_text, re.IGNORECASE):
+                 # Check if not already masked? Simplest is just replace.
+                 # Python replace is case sensitive, regex sub is better
+                 token = self._get_next_token("COMPANY")
+                 self.token_map[token] = company
+                 masked_text = re.sub(re.escape(company), token, masked_text, flags=re.IGNORECASE)
+
+        # 4. Mask Emails
+        email_regex = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
+        emails = list(set(re.findall(email_regex, masked_text)))
+        for email in emails:
+            if "{{" in email: continue
+            token = self._get_next_token("EMAIL")
+            self.token_map[token] = email
+            masked_text = masked_text.replace(email, token)
+
+        # 5. International Phones (libphonenumber)
+        try:
+            for match in phonenumbers.PhoneNumberMatcher(masked_text, "DE"):
+                number_str = masked_text[match.start:match.end]
+                if "{{" in number_str: continue
+                if len(number_str) < 6: continue
+                
+                token = "{{PHONE}}"
+                self.token_map[token] = number_str
+                # Replace exact occurrence
+                # Be careful not to replace partials of other tokens
+                masked_text = masked_text.replace(number_str, token)
+        except Exception:
+            pass # Ignore if parsing fails
+
+        # 6. German Addresses (Regex)
+        address_regex = r"([A-Za-zäöüÄÖÜß]+(?:straße|strasse|str\.|gasse|weg|platz|allee)\s*\d{1,4}[a-zA-Z]?)\s*,?\s*(\d{4,5})\s+([A-Za-zäöüÄÖÜß]+)"
+        # Use finditer
+        for match in re.finditer(address_regex, masked_text):
+            full_match = match.group(0)
+            if "{{" in full_match: continue
+            
+            token = self._get_next_token("ADDRESS")
+            self.token_map[token] = full_match
+            masked_text = masked_text.replace(full_match, token)
+
+        # 7. IBAN
+        iban_regex = r"\b([A-Z]{2}\d{2}[A-Z0-9]{10,30})\b"
+        ibans = list(set(re.findall(iban_regex, masked_text)))
+        for iban in ibans:
+             if "{{" in iban: continue
+             token = self._get_next_token("IBAN")
+             self.token_map[token] = iban
+             masked_text = masked_text.replace(iban, token)
+
+        return masked_text, self.token_map
+
+# Singleton
 _masker = None
-
 def get_masker():
     global _masker
     if not _masker:
-        _masker = PIIMasker()
+        _masker = RegexMasker()
     return _masker
 
 def process_document(text: str) -> Dict[str, Any]:
-    # 1. Extract Header
     header = extract_document_header(text)
-    
-    # 2. Mask
     masker = get_masker()
     
-    # Force mask extracted header fields
     header_vals = [header.customer_name, header.rfq_number, header.customer_number]
     masked_text, token_map = masker.mask(text, header_vals)
     

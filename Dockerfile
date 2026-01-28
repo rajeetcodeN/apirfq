@@ -1,13 +1,11 @@
 # Use official slim Python image
 FROM python:3.9-slim
 
-# Install system dependencies (build tools)
+# Install minimal system dependencies
 RUN apt-get update && apt-get install -y \
     git \
-    gcc \
-    g++ \
     && rm -rf /var/lib/apt/lists/*
-
+    
 # Set working directory
 WORKDIR /app
 
@@ -15,9 +13,9 @@ WORKDIR /app
 COPY python/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download Spacy Model during build (CRITICALLY IMPORTANT FOR STARTUP SPEED)
-# This prevents downloading 500MB+ on every cold start
-RUN python -m spacy download de_core_news_sm
+
+# Environment variables for Python
+ENV PYTHONUNBUFFERED=1
 
 # Copy application code
 COPY python/ .
