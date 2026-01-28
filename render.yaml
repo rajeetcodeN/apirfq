@@ -1,4 +1,4 @@
-d:\rfqintel\rfqintel\pythonservices:
+services:
   - type: web
     name: rfq-intelligence-backend
     env: docker

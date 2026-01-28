@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Download Spacy Model during build (CRITICALLY IMPORTANT FOR STARTUP SPEED)
 # This prevents downloading 500MB+ on every cold start
-RUN python -m spacy download de_core_news_lg
+RUN python -m spacy download de_core_news_sm
 
 # Copy application code
 COPY python/ .

@@ -108,7 +108,7 @@ class PIIMasker:
         # Note: Requires `python -m spacy download de_core_news_lg`
         nlp_config = {
             "nlp_engine_name": "spacy",
-            "models": [{"lang_code": "de", "model_name": "de_core_news_lg"},
+            "models": [{"lang_code": "de", "model_name": "de_core_news_sm"},
                        {"lang_code": "en", "model_name": "en_core_web_lg"}] 
         }
         provider = NlpEngineProvider(nlp_configuration=nlp_config)
@@ -118,7 +118,7 @@ class PIIMasker:
             self.analyzer = AnalyzerEngine(nlp_engine=self.nlp_engine, supported_languages=["de", "en"])
             self.nlp_available = True
         except OSError:
-            logger.warning("Spacy models not found. Falling back to Regex-only mode. Run `python -m spacy download de_core_news_lg`")
+            logger.warning("Spacy models not found. Falling back to Regex-only mode. Run `python -m spacy download de_core_news_sm`")
             self.analyzer = AnalyzerEngine() # Default config
             self.nlp_available = False
 
