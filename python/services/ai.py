@@ -33,10 +33,9 @@ delivery_date: Delivery date in YYYY-MM-DD format if present, else null.
 config: A nested object containing technical specifications:
     - material_id: The structured material ID if present (Format: 100-xxx-xxx.xx-xx, e.g., "100-013-595.01-00").
     - standard: Standard or DIN (e.g., "DIN 6885").
-    - form: The form of the part (e.g., "A", "B", "AB").
-      * Rule: Form A -> Parallel keys: AS / C / E
-      * Rule: Form B -> Parallel keys: D / F / G / H / J
-      * Rule: Form AB -> Parallel keys: ABS / CD / EF
+    - form: The exact form letter from the product code (e.g., "A", "B", "C", "D", "E", "F", "G", "H", "J", "AS", "AB", "ABS", "CD", "EF").
+      * Extract the form exactly as it appears in the article name or product code.
+      * Common forms: A, B, C, D, E, F, G, H, J, AS, AB, ABS, CD, EF.
     - material: Material grade. Must match exactly (e.g., "C45", "C45+C", "1.4057", "1.4571").
     - dimensions: Object with `width`, `height`, `length` (numeric values).
     - features: List of features. Each feature is an object { "feature_type": "...", "spec": "..." }.
