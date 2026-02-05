@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: rfq-intelligence-backend
+    env: docker
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: frankfurt
+    envVars:
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: PORT
+        value: 8000
+    autoDeploy: true
