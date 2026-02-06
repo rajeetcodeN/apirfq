@@ -39,8 +39,9 @@ config: A nested object containing technical specifications:
     - material: Material grade. Must match exactly (e.g., "C45", "C45+C", "1.4057", "1.4571").
     - dimensions: Object with `width`, `height`, `length` (numeric values).
     - features: List of features. Each feature is an object { "feature_type": "...", "spec": "..." }.
-      * Extract "bore" sizes (M1 to M21) here.
-      * Extract "thread", "coating", "heat_treatment" here.
+      * Extract "bore" sizes (M1 to M21) ONLY if explicitly mentioned (e.g., "Bohrung M4", "with thread M5").
+      * Do NOT infer bore from article numbers or unspecified digits.
+      * Extract "thread", "coating", "heat_treatment" only if explicitly stated.
     - weight_per_unit: Weight per single unit if available (numeric).
 
 Important rules:
