@@ -20,13 +20,15 @@ pos: Position number. **IMPORTANT**: Maintain the original numbering exactly (e.
 
 article_name: **CONSTRUCT** this field using the following strict format:
 "{GenericName}-{Standard}-{Material}-{Form}-{Dimensions}-{Features}"
-- GenericName: The base name (e.g. "Passfed", "Key", "Bolt").
+- GenericName: The base name mapped to standard abbreviations:
+  * "Passfeder", "Passfed" -> "PF"
+  * Otherwise use the base name (e.g. "Key", "Bolt").
 - Standard: The standard/DIN (e.g. "DIN6885", "ISO4014").
 - Material: The material grade (e.g. "C45K", "1.4301", "C45+C").
 - Form: The form letter (e.g. "A", "B", "AS").
 - Dimensions: The dimensions in WxHxL format (e.g. "20X12X100").
 - Features: Any additional features like "M6", "M8" extracted from description.
-*Example Result*: "Passfed-DIN6885-C45K-AS-20X12X100-M6"
+*Example Result*: "PF-DIN6885-C45K-AS-20X12X100-M6"
 *Note*: If a component is missing, skip it in the string construction but do not leave double hyphens (e.g. if Form is missing: Name-Standard-Material-Dimensions...).
 
 supplier_material_number: Supplier’s material number if present, else null.
