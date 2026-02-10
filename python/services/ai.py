@@ -18,7 +18,16 @@ requested_items: List of all requested materials/articles in the document. For e
 
 pos: Position number. **IMPORTANT**: Maintain the original numbering exactly (e.g., if the document uses 10, 20, 30, use 10, 20, 30. Do not re-index to 1, 2, 3).
 
-article_name: Name/description of the material (do not include codes inside description).
+article_name: **CONSTRUCT** this field using the following strict format:
+"{GenericName}-{Standard}-{Material}-{Form}-{Dimensions}-{Features}"
+- GenericName: The base name (e.g. "Passfed", "Key", "Bolt").
+- Standard: The standard/DIN (e.g. "DIN6885", "ISO4014").
+- Material: The material grade (e.g. "C45K", "1.4301", "C45+C").
+- Form: The form letter (e.g. "A", "B", "AS").
+- Dimensions: The dimensions in WxHxL format (e.g. "20X12X100").
+- Features: Any additional features like "M6", "M8" extracted from description.
+*Example Result*: "Passfed-DIN6885-C45K-AS-20X12X100-M6"
+*Note*: If a component is missing, skip it in the string construction but do not leave double hyphens (e.g. if Form is missing: Name-Standard-Material-Dimensions...).
 
 supplier_material_number: Supplier’s material number if present, else null.
 
@@ -32,16 +41,14 @@ delivery_date: Delivery date in YYYY-MM-DD format if present, else null.
 
 config: A nested object containing technical specifications:
     - material_id: The structured material ID if present (Format: 100-xxx-xxx.xx-xx, e.g., "100-013-595.01-00").
-    - standard: Standard or DIN (e.g., "DIN 6885").
-    - form: The exact form letter from the product code (e.g., "A", "B", "C", "D", "E", "F", "G", "H", "J", "AS", "AB", "ABS", "CD", "EF").
-      * Extract the form exactly as it appears in the article name or product code.
-      * Common forms: A, B, C, D, E, F, G, H, J, AS, AB, ABS, CD, EF.
+    - standard: Standard or DIN (e.g., "DIN 6885", "ISO 4762").
+    - form: The exact form letter/code (e.g., "A", "B", "AS", "AB", "ABS", "CD", "EF").
+      * Extract the form exactly as it appears.
     - material: Material grade. Must match exactly (e.g., "C45", "C45+C", "1.4057", "1.4571").
-    - dimensions: Object with `width`, `height`, `length` (numeric values).
+    - dimensions: Object with `width`, `height`, `length` (numeric values). Extract from strings like "20x12x100".
     - features: List of features. Each feature is an object { "feature_type": "...", "spec": "..." }.
-      * Extract "bore" sizes (M1 to M21) ONLY if explicitly mentioned (e.g., "Bohrung M4", "with thread M5").
-      * Do NOT infer bore from article numbers or unspecified digits.
-      * Extract "thread", "coating", "heat_treatment" only if explicitly stated.
+      * **CRITICAL**: Extract "M" codes (e.g., "M6", "M8") as features with type "thread" or "bore".
+      * Extract "coating", "heat_treatment" only if explicitly stated.
     - weight_per_unit: Weight per single unit if available (numeric).
 
 Important rules:
