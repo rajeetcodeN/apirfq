@@ -55,7 +55,8 @@ config: A nested object containing technical specifications:
       * Example: "B=10 H=8 T=16" -> {width: 10, height: 8, length: 16}.
     - features: List of features. Each feature is an object { "feature_type": "...", "spec": "..." }.
       * **CRITICAL**: Extract "M" codes (e.g., "M6", "M8") as features with type "thread" or "bore".
-      * Extract "coating", "heat_treatment" only if explicitly stated.
+      * ALWAYS extract them even if they are attached to the article name (e.g., "...-M6" -> extract "M6" as a feature).
+      * Example: "PF...-20x12x100-M6" -> features: [{"feature_type": "thread", "spec": "M6"}]
     - weight_per_unit: Weight per single unit if available (numeric).
 
 Important rules:
