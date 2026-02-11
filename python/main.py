@@ -136,8 +136,16 @@ async def process_file(file: UploadFile = File(...)):
             audit_service.log_event("INGESTION_START", file.filename, "STARTED", {"size_bytes": len(file_bytes), "mime_type": file.content_type})
             
             ingestion_result = await route_ingestion(file_bytes, file.content_type, file.filename)
-            raw_text = ingestion_result["raw_data"]
             source = ingestion_result["source"]
+            
+            # Handle Hybrid PDF logic
+            if source == "hybrid_pdf":
+                raw_text = ingestion_result["ocr_text"]   # Primary for AI/Masking
+                native_text = ingestion_result["native_text"] # Secondary for Validator
+            else:
+                raw_text = ingestion_result["raw_data"]
+                native_text = None
+
             logger.info(f"Ingestion complete. Source: {source}, Length: {len(raw_text)}")
             
             audit_service.log_event("INGESTION_COMPLETE", file.filename, "SUCCESS", {"source": source, "extracted_chars": len(raw_text)})
@@ -165,7 +173,7 @@ async def process_file(file: UploadFile = File(...)):
         # 3. AI Extraction
         try:
             audit_service.log_event("AI_PROCESSING_START", file.filename, "STARTED")
-            ai_data = extract_data_from_text(masked_text)
+            ai_data = extract_data_from_text(masked_text, native_text=native_text)
             logger.info("AI extraction successful.")
             audit_service.log_event("AI_PROCESSING_COMPLETE", file.filename, "SUCCESS")
         except Exception as e:

@@ -14,7 +14,7 @@ class InsufficientTextError(Exception):
     """Raised when PDF text layer is missing or too sparse."""
     pass
 
-def ingest_pdf(file_bytes: bytes) -> str:
+def ingest_pdf_native(file_bytes: bytes) -> str:
     """Extracts text natively from a PDF file using PyMuPDF."""
     try:
         doc = fitz.open(stream=file_bytes, filetype="pdf")
@@ -25,15 +25,11 @@ def ingest_pdf(file_bytes: bytes) -> str:
         doc.close()
         
         trimmed_text = full_text.strip()
-        # Ensure we have enough meaningful text, not just "Page 1"
-        if len(trimmed_text) > 50:
-            return trimmed_text
-        raise InsufficientTextError("Text layer insufficient (Scanned PDF detected).")
+        return trimmed_text
     except Exception as e:
-        if isinstance(e, InsufficientTextError):
-            raise e
         logger.error(f"Native PDF extraction failed: {e}")
-        raise ValueError(f"PDF parsing error: {e}")
+        return ""  # Return empty string on failure, don't raise
+
 
 def ingest_excel(file_bytes: bytes) -> str:
     """Converts Excel sheets to Markdown tables using Pandas."""
@@ -66,14 +62,21 @@ async def route_ingestion(file_bytes: bytes, mime_type: str, filename: str) -> D
     try:
         # 1. PDF
         if mime_type == 'application/pdf' or extension == 'pdf':
-            try:
-                text = ingest_pdf(file_bytes)
-                return {"raw_data": text, "source": "native", "mime_type": mime_type}
-            except InsufficientTextError:
-                logger.info("PDF has no text. Switching to Mistral OCR.")
-                # Pass the original PDF bytes to Mistral OCR
-                ocr_text = perform_mistral_ocr(file_bytes, filename)
-                return {"raw_data": ocr_text, "source": "mistral_ocr", "mime_type": mime_type}
+            # Dual Extraction Strategy for Hybrid Accuracy
+            
+            # 1. Native Extraction (Fast, Character-Perfect)
+            native_text = ingest_pdf_native(file_bytes)
+            
+            # 2. Mistral OCR (Slow, Layout-Perfect)
+            # We enforce OCR now to ensure optimal AI comprehension of tables
+            ocr_text = perform_mistral_ocr(file_bytes, filename)
+            
+            return {
+                "source": "hybrid_pdf",
+                "native_text": native_text,
+                "ocr_text": ocr_text,
+                "mime_type": mime_type
+            }
 
         # 2. Excel
         if extension in ['xlsx', 'xls'] or 'sheet' in mime_type:

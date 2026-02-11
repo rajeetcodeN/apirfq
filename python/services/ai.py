@@ -3,7 +3,8 @@ import os
 import json
 import logging
 import requests
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from services.validator import validate_and_fix_items
 
 logger = logging.getLogger(__name__)
 
@@ -89,9 +90,10 @@ USER_PROMPT_TEMPLATE = """Extract ALL line items and document information from t
 
 Return ONLY valid JSON with no markdown formatting."""
 
-def extract_data_from_text(text: str) -> Dict[str, Any]:
+def extract_data_from_text(text: str, native_text: str = None) -> Dict[str, Any]:
     """
     Sends the masked text to Mistral AI for extraction.
+    Native text is user for post-validation (regex overrides).
     """
     if not MISTRAL_API_KEY:
         raise ValueError("MISTRAL_API_KEY not set")
@@ -133,6 +135,15 @@ def extract_data_from_text(text: str) -> Dict[str, Any]:
             raise ValueError("Empty response from AI")
             
         parsed_json = json.loads(content)
+        
+        # Post-Processing: Validate & Fix using Regex on Native Text
+        if "requested_items" in parsed_json:
+            parsed_json["requested_items"] = validate_and_fix_items(
+                parsed_json["requested_items"], 
+                native_text=native_text, 
+                ocr_text=text
+            )
+            
         return parsed_json
         
     except requests.exceptions.Timeout:
