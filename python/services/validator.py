@@ -72,47 +72,70 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
     """
     source_text = native_text if native_text and len(native_text) > 20 else ocr_text
     
+    # Split source text into lines for line-by-line searching
+    source_lines = source_text.split('\n')
+    
     for item in items:
-        # Get the Article Name / Description extracted by AI
-        # (We assume the AI gets the *string* mostly right, or we scan the whole text line)
         try:
-            article_name = item.get("article_name", "")
+            pos = str(item.get("pos", "")).strip()
+            article_name_ai = item.get("article_name", "")
             config = item.get("config", {})
             
-            if not article_name:
+            target_line = ""
+            
+            # 1. Attempt to find the RAW line in source_text using Position
+            # We look for a line starting with the position number (e.g. "12 " or "012")
+            if pos:
+                for line in source_lines:
+                    # distinct start of line check, handling potential leading spaces
+                    if re.match(rf"^\s*{re.escape(pos)}\s+", line):
+                        target_line = line
+                        logger.info(f"Validator: Found raw line for Pos {pos}: {target_line.strip()[:50]}...")
+                        break
+            
+            # Fallback: If no Pos match, or Pos is empty, check if Article Name exists in a line
+            if not target_line and article_name_ai:
+                 # Try to find a line containing a significant chunk of the article name
+                 # e.g. "DIN6885" and "20X12X50"
+                 parts = article_name_ai.split('-')
+                 significant_parts = [p for p in parts if len(p) > 3]
+                 
+                 for line in source_lines:
+                     if len(significant_parts) >= 2 and all(part in line for part in significant_parts):
+                         target_line = line
+                         break
+            
+            # If we STILL don't have a raw line, fallback to checking the AI's article_name string
+            # This is the "better than nothing" check we had before
+            text_to_scan = target_line if target_line else article_name_ai
+            
+            if not text_to_scan:
                 continue
-                
-            # 1. FIX DIMENSIONS
-            # Check if strict dimensions exist in the article name string
-            strict_dims = parse_dimensions_from_string(article_name)
+
+            # 2. FIX DIMENSIONS (Using strict regex on the SOURCE text)
+            strict_dims = parse_dimensions_from_string(text_to_scan)
             
             if strict_dims and strict_dims.get("length"):
-                 # Override AI's dimensions with strict regex dimensions
-                 # This fixes the "Length 100" vs "Length 50" issue
                  item_dims = config.get("dimensions", {}) or {}
-                 
-                 # Only override not-null values or distinct values
-                 # Actually, FORCE override for Length if regex is confident
-                 logger.info(f"Validator: Forcing dimensions {strict_dims} over {item_dims}")
-                 
+                 # Only override checking if values differ significantly? 
+                 # No, trust Regex over AI for Dimensions.
+                 logger.info(f"Validator: Forcing dimensions {strict_dims} from source text")
                  config["dimensions"] = strict_dims
             
-            # 2. FIX FEATURES (M-Codes)
-            # Scan article name for M-codes
-            strict_features = extract_features_from_string(article_name)
+            # 3. FIX FEATURES (M-Codes) (Using strict regex on the SOURCE text)
+            strict_features = extract_features_from_string(text_to_scan)
             
             current_features = config.get("features", [])
             for sf in strict_features:
-                # Add if missing
                 if not any(cf.get("spec") == sf["spec"] for cf in current_features):
-                    logger.info(f"Validator: Adding missing feature {sf}")
+                    logger.info(f"Validator: Found missing feature {sf} in source text")
                     current_features.append(sf)
             
             config["features"] = current_features
             item["config"] = config
             
         except Exception as e:
-            logger.error(f"Validator failed for item: {e}")
+            logger.error(f"Validator failed for item {item.get('pos')}: {e}")
             continue
             
     return items
