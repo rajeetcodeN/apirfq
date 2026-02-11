@@ -16,20 +16,33 @@ Extract the following fields from the text:
 
 requested_items: List of all requested materials/articles in the document. For each item, extract:
 
-pos: Position number. **IMPORTANT**: Maintain the original numbering exactly (e.g., if the document uses 10, 20, 30, use 10, 20, 30. Do not re-index to 1, 2, 3).
+pos: Position number. **IMPORTANT**: Maintain the original numbering exactly.
 
-article_name: **CONSTRUCT** this field using the following strict format:
+config: **EXTRACT THIS FIRST**. A nested object containing technical specifications:
+    - material_id: The structured material ID if present (Format: 100-xxx-xxx.xx-xx).
+    - standard: Standard or DIN (e.g., "DIN 6885").
+    - form: The exact form letter/code (e.g., "A", "B", "C", "AS", "AB").
+      * **CRITICAL**: Do NOT confuse dimension labels with the Form. "B=10" means Form is NOT "B".
+    - material: Material grade (e.g., "C45", "C45+C").
+    - dimensions: Object with `width`, `height`, `length` (numeric values).
+      * **CRITICAL**: Prioritize dimensions found WITHIN the article string (e.g., "20X12X50" -> Length=50).
+      * **IGNORE** loose numbers that look like material codes (e.g., ignore "100" from "100-013...").
+      * Example: "B=10 H=8 T=16" -> {width: 10, height: 8, length: 16}.
+    - features: List of features. Each feature is an object { "feature_type": "...", "spec": "..." }.
+      * **CRITICAL**: Extract ALL technical specifications (M-codes, coatings, tolerances).
+      * **ALWAYS** extract "M" codes (e.g., "M6") as type "thread"/"bore", even if they appear in the description.
+      * Example: "PF...-20x12x100-M6" -> features: [{"feature_type": "thread", "spec": "M6"}]
+    - weight_per_unit: Weight per single unit if available.
+
+article_name: **CONSTRUCT** this field *AFTER* extracting config. Use this strict format:
 "{GenericName}-{Standard}-{Material}-{Form}-{Dimensions}-{Features}"
-- GenericName: The base name mapped to standard abbreviations:
-  * "Passfeder", "Passfed" -> "PF"
-  * Otherwise use the base name (e.g. "Key", "Bolt").
-- Standard: The standard/DIN (e.g. "DIN6885", "ISO4014").
-- Material: The material grade (e.g. "C45K", "1.4301", "C45+C").
-- Form: The form letter (e.g. "A", "B", "AS").
-- Dimensions: The dimensions in WxHxL format (e.g. "20X12X100").
-- Features: Any additional features like "M6", "M8" extracted from description.
+- GenericName: "Passfeder"/"Passfed" -> "PF". Otherwise use base name.
+- Standard: e.g. "DIN6885".
+- Material: e.g. "C45K".
+- Form: e.g. "AS".
+- Dimensions: e.g. "20X12X50".
+- Features: Any features found in config.features (e.g., "M6").
 *Example Result*: "PF-DIN6885-C45K-AS-20X12X100-M6"
-*Note*: If a component is missing, skip it in the string construction but do not leave double hyphens (e.g. if Form is missing: Name-Standard-Material-Dimensions...).
 
 supplier_material_number: Supplier’s material number if present, else null.
 
@@ -40,26 +53,6 @@ quantity: Number of parts requested.
 unit: Unit of measure (pcs, kg, etc.).
 
 delivery_date: Delivery date in YYYY-MM-DD format if present, else null.
-
-config: A nested object containing technical specifications:
-    - material_id: The structured material ID if present (Format: 100-xxx-xxx.xx-xx, e.g., "100-013-595.01-00").
-    - standard: Standard or DIN (e.g., "DIN 6885", "ISO 4762").
-    - form: The exact form letter/code (e.g., "A", "B", "C", "AS", "AB", "ABS", "CD", "EF").
-      * Extract the form exactly as it appears.
-      * **CRITICAL**: Do NOT confuse dimension labels with the Form. If a letter is followed by "=" or ":" (e.g., "B=10", "H=8", "T=16"), it is a DIMENSION LABEL, not a Form.
-      * The Form is always a standalone letter/code appearing BEFORE dimensions (e.g., "PF C B=10" means Form is "C", not "B").
-    - material: Material grade. Must match exactly (e.g., "C45", "C45+C", "1.4057", "1.4571").
-    - dimensions: Object with `width`, `height`, `length` (numeric values).
-      * From "WxHxL" format: e.g., "20x12x100" -> {width: 20, height: 12, length: 100}.
-      * From labeled format: B/W -> width, H -> height, T/L/D -> length.
-      * Example: "B=10 H=8 T=16" -> {width: 10, height: 8, length: 16}.
-    - features: List of features. Each feature is an object { "feature_type": "...", "spec": "..." }.
-      * **CRITICAL**: Extract ALL technical specifications that are not dimensions, material, or form.
-      * Include "M" codes (e.g., M6, M8) as type "thread" or "bore".
-      * Include other specs like "coating", "heat_treatment", "tolerance" (e.g., "h9", "H7").
-      * **IMPORTANT**: Even if a feature (like "M6") is included in the article_name, it MUST also be listed here. Do not skip it.
-      * Example: "PF...-20x12x100-M6" -> features: [{"feature_type": "thread", "spec": "M6"}]
-    - weight_per_unit: Weight per single unit if available (numeric).
 
 Important rules:
 
