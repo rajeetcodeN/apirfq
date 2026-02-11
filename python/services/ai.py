@@ -44,10 +44,15 @@ delivery_date: Delivery date in YYYY-MM-DD format if present, else null.
 config: A nested object containing technical specifications:
     - material_id: The structured material ID if present (Format: 100-xxx-xxx.xx-xx, e.g., "100-013-595.01-00").
     - standard: Standard or DIN (e.g., "DIN 6885", "ISO 4762").
-    - form: The exact form letter/code (e.g., "A", "B", "AS", "AB", "ABS", "CD", "EF").
+    - form: The exact form letter/code (e.g., "A", "B", "C", "AS", "AB", "ABS", "CD", "EF").
       * Extract the form exactly as it appears.
+      * **CRITICAL**: Do NOT confuse dimension labels with the Form. If a letter is followed by "=" or ":" (e.g., "B=10", "H=8", "T=16"), it is a DIMENSION LABEL, not a Form.
+      * The Form is always a standalone letter/code appearing BEFORE dimensions (e.g., "PF C B=10" means Form is "C", not "B").
     - material: Material grade. Must match exactly (e.g., "C45", "C45+C", "1.4057", "1.4571").
-    - dimensions: Object with `width`, `height`, `length` (numeric values). Extract from strings like "20x12x100".
+    - dimensions: Object with `width`, `height`, `length` (numeric values).
+      * From "WxHxL" format: e.g., "20x12x100" -> {width: 20, height: 12, length: 100}.
+      * From labeled format: B/W -> width, H -> height, T/L/D -> length.
+      * Example: "B=10 H=8 T=16" -> {width: 10, height: 8, length: 16}.
     - features: List of features. Each feature is an object { "feature_type": "...", "spec": "..." }.
       * **CRITICAL**: Extract "M" codes (e.g., "M6", "M8") as features with type "thread" or "bore".
       * Extract "coating", "heat_treatment" only if explicitly stated.
