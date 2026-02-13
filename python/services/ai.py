@@ -97,7 +97,7 @@ USER_PROMPT_TEMPLATE = """Extract ALL line items and document information from t
 
 Return ONLY valid JSON with no markdown formatting."""
 
-def extract_data_from_text(text: str, native_text: str = None) -> Dict[str, Any]:
+def extract_data_from_text(text: str, native_text: str = None, user_feedback: str = None) -> Dict[str, Any]:
     """
     Sends the masked text to Mistral AI for extraction.
     Native text is user for post-validation (regex overrides).
@@ -115,8 +115,14 @@ def extract_data_from_text(text: str, native_text: str = None) -> Dict[str, Any]
         learned_context = correction_service.get_few_shot_context(text)
     else:
         learned_context = ""
+
+    # Inject User Feedback if present - THIS IS CRITICAL
+    feedback_instruction = ""
+    if user_feedback:
+        logger.info(f"Injecting user feedback: {user_feedback}")
+        feedback_instruction = f"\\n\\n🚨 USER FEEDBACK / MANUAL OVERRIDE:\\nThe user has manually reviewed the previous output and provided this specific correction instruction:\\n'{user_feedback}'\\n\\nYOU MUST FOLLOW THIS INSTRUCTION ABOVE ALL OTHER RULES."
         
-    system_prompt_with_context = SYSTEM_PROMPT.replace("{LEARNED_CONTEXT}", learned_context)
+    system_prompt_with_context = SYSTEM_PROMPT.replace("{LEARNED_CONTEXT}", learned_context + feedback_instruction)
     
     headers = {
         "Authorization": f"Bearer {MISTRAL_API_KEY}",
