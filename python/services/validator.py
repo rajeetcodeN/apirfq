@@ -65,10 +65,60 @@ def extract_features_from_string(text: str) -> List[Dict[str, str]]:
             
     return features
 
+
+def calculate_confidence(item: Dict[str, Any], raw_text_snippet: str) -> float:
+    """
+    Calculates a rule-based confidence score (0.0 to 1.0) for an item.
+    """
+    score = 1.0
+    issues = []
+    
+    config = item.get("config", {})
+    
+    # Check if raw_text_snippet is None or empty
+    if not raw_text_snippet:
+        return 0.5 # Default low confidence if no text to check against
+    
+    # 1. Check for Missing Dimensions if they seem present in text
+    dims_in_text = parse_dimensions_from_string(raw_text_snippet)
+    dims_in_json = config.get("dimensions", {})
+    
+    if dims_in_text and not dims_in_json:
+        score -= 0.3
+        issues.append("Dimensions found in text but missed in JSON")
+        
+    # 2. Check for Feature Mismatches (e.g. M-codes)
+    text_features = extract_features_from_string(raw_text_snippet)
+    json_features = config.get("features", [])
+    
+    for tf in text_features:
+        if not any(jf.get("spec") == tf["spec"] for jf in json_features):
+            score -= 0.2
+            issues.append(f"Feature {tf['spec']} missed")
+            
+    # 3. Check for weird Form codes (single letters that might be dimensions labels)
+    form = config.get("form", "")
+    if form and len(form) == 1 and f"{form}=" in raw_text_snippet.replace(" ", ""):
+        # e.g. Form="B" but text has "B=20"
+        score -= 0.4
+        issues.append(f"Form '{form}' matches dimension label pattern")
+        
+    # 4. Check for Empty Form if "Form" keyword is in text
+    if "Form" in raw_text_snippet and not form:
+        score -= 0.1
+        issues.append("Form keyword present but not extracted")
+
+    if score < 1.0:
+        logger.info(f"Validator Confidence Reduced for {item.get('pos')}: {score:.2f} -> Issues: {issues}")
+        
+    return max(0.0, score)
+
+
 def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_text: str) -> List[Dict[str, Any]]:
     """
     Validates and overrides AI extracted items using strict Regex on the source text.
     Prioritizes native_text if available, falls back to ocr_text.
+    Also appends 'metadata' with 'rule_confidence_score' and 'raw_text_snippet'.
     """
     source_text = native_text if native_text and len(native_text) > 20 else ocr_text
     
@@ -76,6 +126,10 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
     source_lines = source_text.split('\n')
     
     for item in items:
+        # Initialize metadata if not present
+        if "metadata" not in item:
+            item["metadata"] = {}
+            
         try:
             pos = str(item.get("pos", "")).strip()
             article_name_ai = item.get("article_name", "")
@@ -83,20 +137,16 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             
             target_line = ""
             
-            # 1. Attempt to find the RAW line in source_text using Position
-            # We look for a line starting with the position number (e.g. "12 " or "012")
+            # 1. Attempt to find the RAW line in source_text
             if pos:
                 for line in source_lines:
-                    # distinct start of line check, handling potential leading spaces
+                    # distinct start of line check
                     if re.match(rf"^\s*{re.escape(pos)}\s+", line):
                         target_line = line
                         logger.info(f"Validator: Found raw line for Pos {pos}: {target_line.strip()[:50]}...")
                         break
             
-            # Fallback: If no Pos match, or Pos is empty, check if Article Name exists in a line
             if not target_line and article_name_ai:
-                 # Try to find a line containing a significant chunk of the article name
-                 # e.g. "DIN6885" and "20X12X50"
                  parts = article_name_ai.split('-')
                  significant_parts = [p for p in parts if len(p) > 3]
                  
@@ -105,34 +155,38 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                          target_line = line
                          break
             
-            # If we STILL don't have a raw line, fallback to checking the AI's article_name string
-            # This is the "better than nothing" check we had before
             text_to_scan = target_line if target_line else article_name_ai
             
+            # Store raw text snippet for the Verifier/Learner later
+            item["metadata"]["raw_text_snippet"] = text_to_scan
+            
             if not text_to_scan:
+                # Default high confidence if we can't find source text to invalidate it?
+                # No, standard 0.5 because we are flying blind.
+                item["metadata"]["rule_confidence_score"] = 0.5
                 continue
 
             # 2. FIX DIMENSIONS (Using strict regex on the SOURCE text)
             strict_dims = parse_dimensions_from_string(text_to_scan)
-            
             if strict_dims and strict_dims.get("length"):
                  item_dims = config.get("dimensions", {}) or {}
                  # Only override checking if values differ significantly? 
-                 # No, trust Regex over AI for Dimensions.
-                 logger.info(f"Validator: Forcing dimensions {strict_dims} from source text")
+                 # Trust Regex over AI for Dimensions.
                  config["dimensions"] = strict_dims
             
             # 3. FIX FEATURES (M-Codes) (Using strict regex on the SOURCE text)
             strict_features = extract_features_from_string(text_to_scan)
-            
             current_features = config.get("features", [])
             for sf in strict_features:
                 if not any(cf.get("spec") == sf["spec"] for cf in current_features):
-                    logger.info(f"Validator: Found missing feature {sf} in source text")
                     current_features.append(sf)
             
             config["features"] = current_features
             item["config"] = config
+            
+            # 4. CALCULATE CONFIDENCE
+            confidence = calculate_confidence(item, text_to_scan)
+            item["metadata"]["rule_confidence_score"] = confidence
             
         except Exception as e:
             logger.error(f"Validator failed for item {item.get('pos')}: {e}")

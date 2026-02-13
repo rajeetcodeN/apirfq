@@ -5,6 +5,8 @@ import uvicorn
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from typing import Dict, Any, Optional
+from pydantic import BaseModel
 
 # Load env - check current dir first (Docker), then parent dir (local dev)
 import pathlib
@@ -17,12 +19,22 @@ from services.ingestion import route_ingestion
 from services.masking import process_document
 from services.ai import extract_data_from_text
 from services.audit import audit_service
+from services.correction_service import CorrectionService
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("rfq-backend")
 
 app = FastAPI(title="RFQ Intelligence Backend", version="1.0.0")
+
+# Instantiate Services
+correction_service = CorrectionService()
+
+# Models
+class CorrectionRequest(BaseModel):
+    raw_text_snippet: str
+    correct_json: Dict[str, Any]
+    full_text_context: str = ""
 
 # CORS (Allow everything for dev)
 app.add_middleware(
@@ -203,6 +215,24 @@ async def process_file(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Unhandled error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
+@app.post("/correct")
+async def submit_correction(request: CorrectionRequest):
+    """
+    Receives user corrections from the UI and saves them to the Learning Store.
+    This enables the AI to learn from mistakes and improve over time.
+    """
+    try:
+        correction_service.save_correction(
+            request.raw_text_snippet,
+            request.correct_json,
+            request.full_text_context
+        )
+        logger.info(f"Correction saved from UI for snippet: {request.raw_text_snippet[:30]}...")
+        return {"status": "success", "message": "Correction saved. The system has learned from this feedback."}
+    except Exception as e:
+        logger.error(f"Failed to save correction: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

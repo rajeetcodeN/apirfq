@@ -1,15 +1,20 @@
-
 import os
 import json
 import logging
 import requests
 from typing import Dict, Any, Optional
 from services.validator import validate_and_fix_items
+from services.correction_service import CorrectionService
+from services.verifier import Verifier
 
 logger = logging.getLogger(__name__)
 
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 MISTRAL_API_BASE = "https://api.mistral.ai/v1"
+
+# Instantiate services
+correction_service = CorrectionService()
+verifier = Verifier()
 
 SYSTEM_PROMPT = """You are a document parsing assistant designed to extract structured data from purchase orders and RFQs for automated uploading and validation in a procurement system.
 
@@ -73,6 +78,8 @@ Always return a single valid JSON object with the exact key names above.
 
 ✨ Ensure all position numbers (pos) are in sequence.
 
+{LEARNED_CONTEXT}
+
 output format
 
 You must respond ONLY with valid raw rendered JSON.
@@ -103,6 +110,14 @@ def extract_data_from_text(text: str, native_text: str = None) -> Dict[str, Any]
         
     logger.info("Sending request to Mistral AI...")
     
+    # 1. Fetch Learned Context (Few-Shot Examples)
+    if correction_service:
+        learned_context = correction_service.get_few_shot_context(text)
+    else:
+        learned_context = ""
+        
+    system_prompt_with_context = SYSTEM_PROMPT.replace("{LEARNED_CONTEXT}", learned_context)
+    
     headers = {
         "Authorization": f"Bearer {MISTRAL_API_KEY}",
         "Content-Type": "application/json"
@@ -111,7 +126,7 @@ def extract_data_from_text(text: str, native_text: str = None) -> Dict[str, Any]
     payload = {
         "model": "mistral-small-latest",
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt_with_context},
             {"role": "user", "content": USER_PROMPT_TEMPLATE.replace("{TEXT}", text)}
         ],
         "temperature": 0.1,
@@ -136,7 +151,8 @@ def extract_data_from_text(text: str, native_text: str = None) -> Dict[str, Any]
             
         parsed_json = json.loads(content)
         
-        # Post-Processing: Validate & Fix using Regex on Native Text
+        # 2. Post-Processing: Validate & Fix using Regex on Native Text
+        # This acts as our "Rule-Based Verification Layer"
         if "requested_items" in parsed_json:
             parsed_json["requested_items"] = validate_and_fix_items(
                 parsed_json["requested_items"], 
@@ -144,6 +160,40 @@ def extract_data_from_text(text: str, native_text: str = None) -> Dict[str, Any]
                 ocr_text=text
             )
             
+            # 3. AI Verification Layer (The "Double Check")
+            # Only checking items with low confidence from the rules layer
+            for item in parsed_json["requested_items"]:
+                # Default confidence inside metadata might not exist if validator failed, default to 1.0 (optimistic) to avoid loop
+                metadata = item.get("metadata", {})
+                confidence = metadata.get("rule_confidence_score", 1.0)
+                
+                if confidence < 0.9:
+                    raw_snippet = metadata.get("raw_text_snippet", "")
+                    if raw_snippet:
+                        logger.info(f"Low confidence ({confidence:.2f}) for Pos {item.get('pos')}. Triggering Verifier...")
+                        try:
+                            verification_result = verifier.verify_item(raw_snippet, item)
+                            
+                            item["metadata"]["verification_result"] = verification_result
+                            
+                            if not verification_result.get("is_correct", True):
+                                correction = verification_result.get("correction")
+                                if correction:
+                                    logger.info(f"Verifier corrected item {item.get('pos')}")
+                                    # Merge correction into item
+                                    if "config" in correction:
+                                        item["config"].update(correction["config"])
+                                    if "article_name" in correction:
+                                        item["article_name"] = correction["article_name"]
+                                    
+                                    item["metadata"]["status"] = "auto_corrected_by_verifier"
+                                else:
+                                    item["metadata"]["status"] = "flagged_by_verifier"
+                            else:
+                                item["metadata"]["status"] = "verified_correct"
+                        except Exception as ve:
+                             logger.error(f"Verifier error: {ve}")
+
         return parsed_json
         
     except requests.exceptions.Timeout:
