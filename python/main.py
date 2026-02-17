@@ -29,6 +29,20 @@ logger = logging.getLogger("rfq-backend")
 
 app = FastAPI(title="RFQ Intelligence Backend", version="1.0.0")
 
+# CORS - Allow frontend to call backend directly
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://rfqinterface.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:3001",
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app",  # All Vercel preview branches
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Instantiate Services
 correction_service = CorrectionService()
 
