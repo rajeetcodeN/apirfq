@@ -110,7 +110,20 @@ def cross_validate(our_items: list, n8n_data: dict) -> list:
         our_qty = item.get("quantity")
         n8n_qty = n8n_item.get("quantity", n8n_item.get("menge"))
         if our_qty and n8n_qty and str(our_qty) != str(n8n_qty):
-            mismatches.append(f"quantity: ours={our_qty} vs n8n={n8n_qty}")
+            # TRUST n8n: Auto-correct Quantity
+            old_qty = our_qty
+            item["quantity"] = n8n_qty
+            if "config" in item:
+                item["config"]["quantity"] = n8n_qty
+            
+            logger.info(f"Pos {pos}: Auto-corrected Quantity {old_qty} -> {n8n_qty} (Trusting n8n)")
+            
+            if "metadata" not in item:
+                item["metadata"] = {}
+            item["metadata"]["n8n_corrected"] = True
+            item["metadata"]["original_quantity"] = old_qty
+            
+            # mismatches.append(f"quantity: ours={our_qty} vs n8n={n8n_qty} (Auto-Corrected)")
         
         # Compare material
         our_mat = config.get("material", "")
