@@ -4,7 +4,8 @@ import logging
 import io
 import pandas as pd
 from docx import Document
-from typing import Dict, Any
+from typing import Dict, Any, List
+from tabulate import tabulate
 
 from services.ocr import perform_mistral_ocr
 
@@ -14,21 +15,49 @@ class InsufficientTextError(Exception):
     """Raised when PDF text layer is missing or too sparse."""
     pass
 
-def ingest_pdf_native(file_bytes: bytes) -> str:
-    """Extracts text natively from a PDF file using pdfplumber."""
+def ingest_pdf_native(file_bytes: bytes) -> tuple[str, List[Dict[str, Any]]]:
+    """
+    Extracts text AND structured tables natively from a PDF file using pdfplumber.
+    Returns: (full_text, list_of_markdown_tables)
+    """
     try:
         full_text = ""
+        structured_tables = []
+        
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             for i, page in enumerate(pdf.pages):
-                # extract_text(layout=True) is key for preserving table structure
+                # 1. Extract Text (layout=True preserves visual spacing)
                 text = page.extract_text(layout=True) or ""
                 full_text += f"--- Page {i + 1} ---\n{text}\n\n"
-        
+                
+                # 2. Extract Tables (Strict Structure)
+                # settings={"vertical_strategy": "lines", "horizontal_strategy": "lines"} # strict grid
+                # Just use default for broad compatibility first
+                tables = page.extract_tables()
+                
+                for table in tables:
+                    if not table: continue
+                    # Clean None values to empty strings
+                    cleaned_table = [[cell or "" for cell in row] for row in table]
+                    
+                    # Convert to Markdown using tabulate
+                    # We assume first row is header if it looks header-ish, otherwise just grid
+                    try:
+                        md = tabulate(cleaned_table, headers="firstrow", tablefmt="github")
+                        structured_tables.append({
+                            "markdown": md,
+                            "page": i + 1,
+                            "rows": len(cleaned_table)
+                        })
+                    except Exception as e:
+                        logger.warning(f"Failed to tabulate table on page {i+1}: {e}")
+
         trimmed_text = full_text.strip()
-        return trimmed_text
+        return trimmed_text, structured_tables
+        
     except Exception as e:
         logger.error(f"Native PDF extraction failed: {e}")
-        return ""  # Return empty string on failure, don't raise
+        return "", []  # Return empty on failure
 
 
 def ingest_excel(file_bytes: bytes) -> str:
@@ -64,18 +93,18 @@ async def route_ingestion(file_bytes: bytes, mime_type: str, filename: str) -> D
         if mime_type == 'application/pdf' or extension == 'pdf':
             # STRATEGY: Native Extraction FIRST (Fast, Accurate). Fallback to OCR if scanned (slow).
             
-            # 1. Native Extraction (pdfplumber)
-            native_text = ingest_pdf_native(file_bytes)
+            # 1. Native Extraction (pdfplumber) - Returns (text, tables)
+            native_text, native_tables = ingest_pdf_native(file_bytes)
             
             # Check if text is sufficient (not scanned/image)
             # Threshold: < 50 chars total usually means scanned image or empty
             if len(native_text) > 100:
-                logger.info("Native PDF text detected. Skipping OCR.")
+                logger.info(f"Native PDF text detected. Skipping OCR. Found {len(native_tables)} tables.")
                 return {
                     "source": "hybrid_pdf", # Use hybrid_pdf so main.py processes it correctly
                     "native_text": native_text,
                     "ocr_text": native_text, # Use native as primary
-                    "ocr_tables": [], 
+                    "ocr_tables": native_tables, # Pass structured tables to AI
                     "mime_type": mime_type
                 }
             
