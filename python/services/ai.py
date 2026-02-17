@@ -160,7 +160,7 @@ def extract_data_from_text(text: str, native_text: str = None, user_feedback: st
     }
     
     payload = {
-        "model": "mistral-medium-latest",
+        "model": "mistral-small-latest",
         "messages": [
             {"role": "system", "content": system_prompt_with_context},
             {"role": "user", "content": USER_PROMPT_TEMPLATE.replace("{TEXT}", text)}
