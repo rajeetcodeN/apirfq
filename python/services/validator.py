@@ -245,22 +245,31 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             target_line = ""
             
             # 1. Attempt to find the RAW line in source_text
+            # Grab the position line + 5 lines below (description, DIN code, EAN, etc.)
             if pos:
-                for line in source_lines:
+                for idx, line in enumerate(source_lines):
                     # distinct start of line check
                     if re.match(rf"^\s*{re.escape(pos)}\s+", line):
-                        target_line = line
-                        logger.info(f"Validator: Found raw line for Pos {pos}: {target_line.strip()[:50]}...")
+                        end_idx = min(len(source_lines), idx + 6)
+                        context_lines = source_lines[idx:end_idx]
+                        target_line = "\n".join(context_lines)
+                        logger.info(f"Validator: Found raw context for Pos {pos} ({len(context_lines)} lines)")
                         break
             
             # Try searching by material_id (more unique than pos number)
+            # IMPORTANT: material_id line is usually at the BOTTOM of a position block.
+            # The actual product description (dimensions, form, material) is ABOVE it.
+            # So we grab 5 lines above the match as context.
             if not target_line:
                 mat_id = config.get("material_id", "")
                 if mat_id and len(mat_id) > 5:
-                    for line in source_lines:
+                    for idx, line in enumerate(source_lines):
                         if mat_id in line:
-                            target_line = line
-                            logger.info(f"Validator: Found raw line by material_id for Pos {pos}: {target_line.strip()[:50]}...")
+                            # Grab context: 5 lines above + the match line itself
+                            start_idx = max(0, idx - 5)
+                            context_lines = source_lines[start_idx:idx + 1]
+                            target_line = "\n".join(context_lines)
+                            logger.info(f"Validator: Found raw context by material_id for Pos {pos} ({len(context_lines)} lines)")
                             break
             
             if not target_line and article_name_ai:
@@ -319,11 +328,73 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                 if fixed_material != raw_material:
                     config["material"] = fixed_material
                     item["config"] = config
-                    # Also fix article_name if it contains the bad material
-                    article_name = item.get("article_name", "")
-                    if raw_material in article_name:
-                        item["article_name"] = article_name.replace(raw_material, fixed_material)
                     item["metadata"]["material_auto_corrected"] = f"{raw_material} -> {fixed_material}"
+            
+            # 3c. EXTRACT FORM from raw text if AI missed it
+            if not config.get("form") and text_to_scan:
+                form_match = re.search(r'(?:^|-)([A-Z]{1,2})(?=-|\s|$)', text_to_scan)
+                # Check common forms
+                for form_candidate in ["AS", "AB", "A", "B", "C"]:
+                    if f"-{form_candidate}-" in text_to_scan or text_to_scan.startswith(f"{form_candidate}-"):
+                        config["form"] = form_candidate
+                        item["config"] = config
+                        logger.info(f"Validator: Extracted Form '{form_candidate}' from raw text for Pos {pos}")
+                        break
+            
+            # 3d. EXTRACT MATERIAL from raw text if AI missed it
+            VALID_MATERIALS = ["C45+C", "C45K", "C45", "42CrMo4", "1.4301", "1.4305", "1.4571", "1.4404", "1.4057"]
+            if not config.get("material") and text_to_scan:
+                for mat in VALID_MATERIALS:
+                    if mat in text_to_scan:
+                        config["material"] = mat
+                        item["config"] = config
+                        logger.info(f"Validator: Extracted Material '{mat}' from raw text for Pos {pos}")
+                        break
+                # Also try common OCR misreads
+                if not config.get("material"):
+                    text_upper = text_to_scan.upper()
+                    if "C45C" in text_upper or "C45+C" in text_upper:
+                        config["material"] = "C45+C"
+                        item["config"] = config
+                    elif "C45K" in text_upper:
+                        config["material"] = "C45K"
+                        item["config"] = config
+            
+            # 3e. ALWAYS CONSTRUCT article_name — never send null
+            dims = config.get("dimensions", {}) or {}
+            form = config.get("form", "")
+            material = config.get("material", "")
+            features = config.get("features", [])
+            
+            # Build dimensions string
+            dim_parts = []
+            for key in ["width", "height", "length"]:
+                v = dims.get(key)
+                if v is not None:
+                    dim_parts.append(str(int(v)) if float(v) == int(float(v)) else str(v))
+            dim_str = "X".join(dim_parts) if dim_parts else ""
+            
+            # Build features string
+            feat_str = "-".join([f.get("spec", "") for f in features if f.get("spec")]) if features else ""
+            
+            # Construct: PF-{Form}-{Dimensions}-{Material}-{Features}
+            name_parts = ["PF"]
+            if form:
+                name_parts.append(form)
+            if dim_str:
+                name_parts.append(dim_str)
+            if material:
+                name_parts.append(material)
+            if feat_str:
+                name_parts.append(feat_str)
+            
+            constructed_name = "-".join(name_parts)
+            
+            # Only use constructed name if we have at least form or dimensions
+            if len(name_parts) >= 3:  # PF + at least 2 more parts
+                item["article_name"] = constructed_name
+            elif not item.get("article_name"):
+                item["article_name"] = constructed_name  # Even partial is better than null
             
             # 4. CALCULATE CONFIDENCE
             confidence = calculate_confidence(item, text_to_scan)

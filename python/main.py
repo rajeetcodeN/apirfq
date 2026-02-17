@@ -104,15 +104,20 @@ def cross_validate(our_items: list, n8n_data: dict) -> list:
         if our_mat and n8n_mat and our_mat.lower() != str(n8n_mat).lower():
             mismatches.append(f"material: ours={our_mat} vs n8n={n8n_mat}")
         
-        # Compare dimensions
+        # Compare dimensions (numeric comparison to avoid 22.0 vs 22 false positives)
         our_dims = config.get("dimensions", {}) or {}
         n8n_dims = n8n_config.get("dimensions", {}) or {}
         if our_dims and n8n_dims:
             for key in ["width", "height", "length"]:
                 ov = our_dims.get(key)
                 nv = n8n_dims.get(key)
-                if ov and nv and str(ov) != str(nv):
-                    mismatches.append(f"{key}: ours={ov} vs n8n={nv}")
+                if ov is not None and nv is not None:
+                    try:
+                        if float(ov) != float(nv):
+                            mismatches.append(f"{key}: ours={ov} vs n8n={nv}")
+                    except (ValueError, TypeError):
+                        if str(ov) != str(nv):
+                            mismatches.append(f"{key}: ours={ov} vs n8n={nv}")
         
         # Apply results
         if mismatches:
@@ -256,20 +261,12 @@ async def process_file(file: UploadFile = File(...)):
             source = ingestion_result["source"]
             
             # Handle Hybrid PDF logic
-            # STRATEGY: Use native text as PRIMARY (clean, character-perfect - same as n8n)
-            # Fall back to OCR only for scanned PDFs with no text layer
+            # STRATEGY: OCR is PRIMARY (understands visual table layout + table_format=markdown)
+            # Native text is secondary for validator cross-checking
             if source == "hybrid_pdf":
-                native_text = ingestion_result["native_text"]
-                ocr_text = ingestion_result["ocr_text"]
+                raw_text = ingestion_result["ocr_text"]        # OCR = primary (table-aware)
+                native_text = ingestion_result["native_text"]  # Native = secondary for validator
                 ocr_tables = ingestion_result.get("ocr_tables", [])
-                
-                # Use native text if it has enough content (like n8n does)
-                if native_text and len(native_text.strip()) > 100:
-                    raw_text = native_text
-                    logger.info("Using NATIVE text as primary (character-perfect)")
-                else:
-                    raw_text = ocr_text
-                    logger.info("Using OCR text as primary (scanned PDF, no native text layer)")
             else:
                 raw_text = ingestion_result["raw_data"]
                 native_text = None
