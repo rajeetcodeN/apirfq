@@ -77,8 +77,12 @@ customer_material_number: Customer’s material number if present, else null.
 
 quantity: Number of parts requested.
   * **CRITICAL**: Use "Menge" (total quantity ordered), NOT "VPE" (packaging unit / Verpackungseinheit).
-  * VPE is the packaging size, Menge is the actual order quantity.
+  * **CRITICAL**: Do NOT confuse "Preiseinheit" (PE / Price Unit) with Quantity.
+    - Example: "15,85 / 100" -> 100 is the PRICE UNIT, not the quantity.
+    - Look for the largest integer number that represents the total order amount.
+  * VPE is the packaging size (e.g. 200), Menge is the actual order quantity (e.g. 2000).
   * Example: If VPE=200 and Menge=2000, extract quantity as 2000.
+  * **FALLBACK**: If multiple numbers exist (200, 2000, 100), usually the LARGEST number is the Quantity.
 
 unit: Unit of measure (pcs, kg, etc.).
 
