@@ -205,6 +205,15 @@ def extract_data_from_text(text: str, native_text: str = None, user_feedback: st
                 
                 if confidence < 0.9:
                     raw_snippet = metadata.get("raw_text_snippet", "")
+                    
+                    # SKIP VERIFIER IF SNIPPET IS FALLBACK
+                    # If we couldn't find the real raw line, the snippet is just the article name.
+                    # The Verifier will 100% flag this as "hallucination" because the dimensions aren't in the snippet.
+                    if metadata.get("snippet_is_fallback"):
+                        logger.info(f"Skipping Verifier for Pos {item.get('pos')} because snippet is fallback.")
+                        item["metadata"]["status"] = "verified_skipped_fallback"
+                        continue
+
                     if raw_snippet:
                         logger.info(f"Low confidence ({confidence:.2f}) for Pos {item.get('pos')}. Triggering Verifier...")
                         try:
