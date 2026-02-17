@@ -353,14 +353,20 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             
             # 3c. EXTRACT FORM from raw text if AI missed it
             if not config.get("form") and text_to_scan:
-                form_match = re.search(r'(?:^|-)([A-Z]{1,2})(?=-|\s|$)', text_to_scan)
-                # Check common forms
-                for form_candidate in ["AS", "AB", "A", "B", "C"]:
-                    if f"-{form_candidate}-" in text_to_scan or text_to_scan.startswith(f"{form_candidate}-"):
-                        config["form"] = form_candidate
-                        item["config"] = config
-                        logger.info(f"Validator: Extracted Form '{form_candidate}' from raw text for Pos {pos}")
-                        break
+                # Check for "DIN 6885 X" pattern (space separated)
+                din_form_match = re.search(r'DIN\s*6885\s+([A-Z]{1,2})(?=\s|$)', text_to_scan, re.IGNORECASE)
+                if din_form_match:
+                    config["form"] = din_form_match.group(1).upper()
+                    item["config"] = config
+                    logger.info(f"Validator: Extracted Form '{config['form']}' from DIN pattern for Pos {pos}")
+                else:
+                    # Check common dash-separated forms
+                    for form_candidate in ["AS", "AB", "A", "B", "C", "E", "D", "K"]:
+                        if f"-{form_candidate}-" in text_to_scan or text_to_scan.startswith(f"{form_candidate}-"):
+                            config["form"] = form_candidate
+                            item["config"] = config
+                            logger.info(f"Validator: Extracted Form '{form_candidate}' from raw text for Pos {pos}")
+                            break
             
             # 3d. EXTRACT MATERIAL from raw text if AI missed it
             VALID_MATERIALS = ["C45+C", "C45K", "C45", "42CrMo4", "1.4301", "1.4305", "1.4571", "1.4404", "1.4057"]

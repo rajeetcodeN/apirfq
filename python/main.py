@@ -38,7 +38,7 @@ N8N_WEBHOOK_URL = "https://nosta.app.n8n.cloud/webhook/60573ec2-ab96-4470-9c3c-d
 async def send_to_n8n(file_bytes: bytes, filename: str) -> dict:
     """Send raw file to n8n webhook and wait for extracted data response."""
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             files = {"file": (filename, file_bytes)}
             response = await client.post(N8N_WEBHOOK_URL, files=files)
             logger.info(f"n8n webhook response: {response.status_code}")

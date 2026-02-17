@@ -28,8 +28,9 @@ pos: Position number. **IMPORTANT**: Maintain the original numbering exactly.
 config: **EXTRACT THIS FIRST**. A nested object containing technical specifications:
     - material_id: The structured material ID if present (Format: 100-xxx-xxx.xx-xx).
     - standard: Standard or DIN (e.g., "DIN 6885").
-    - form: The exact form letter/code (e.g., "A", "B", "C", "AS", "AB").
+    - form: The exact form letter/code (e.g., "A", "B", "C", "AS", "AB", "E", "D", "K").
       * **CRITICAL**: Do NOT confuse dimension labels with the Form. "B=10" means Form is NOT "B".
+      * **IMPORTANT**: Extract single letters like "E", "K", "D" if they appear after the standard (e.g. "DIN 6885 E").
     - material: Material grade.
       * **WHITELIST**: Only accepted values are: ["C45", "C45+C", "C45K", "42CrMo4", "1.4301", "1.4305", "1.4571", "1.4404", "1.4057"].
       * **CLEANING**: Remove prefixes like "P", "PF", "P85", "P885" if attached to material.
@@ -46,6 +47,8 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
         - The tolerance letter+number (H7, H9, h9) is NOT a dimension — it's a feature.
         - The tolerance letter+number (H7, H9) is NOT a dimension — it's a feature.
         - Example: "8H9X7X36" -> dimensions: {width:8, height:7, length:36}, feature: {type:"tolerance", spec:"H9"}
+      * **HANDLE ENGLISH**: "Parallel key DIN 6885 E 8x7x80" -> Form=E, Dims=8x7x80.
+      * **HANDLE DASH SEPARATORS**: "8x7x80 — 10000" -> The number after the dash is QUANTITY, not a dimension.
       * **IGNORE** loose numbers that look like material codes (e.g., ignore "100" from "100-013...").
       * Example: "B=10 H=8 T=16" -> {width: 10, height: 8, length: 16}.
     - features: List of features. Each feature is an object { "feature_type": "...", "spec": "..." }.
