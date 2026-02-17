@@ -32,15 +32,13 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
       * **CRITICAL**: Do NOT confuse dimension labels with the Form. "B=10" means Form is NOT "B".
       * **IMPORTANT**: Extract single letters like "E", "K", "D" if they appear after the standard (e.g. "DIN 6885 E").
     - material: Material grade.
-      * **WHITELIST**: Only accepted values are: ["C45", "C45+C", "C45K", "42CrMo4", "1.4301", "1.4305", "1.4571", "1.4404", "1.4057"].
-      * **CLEANING**: Remove prefixes like "P", "PF", "P85", "P885" if attached to material.
-        - Example: "P885-C45C" -> "C45+C"
-        - Example: "P5K" -> "C45K"
-        - Example: "P5C" -> "C45+C"
-        - Example: "C45C" -> "C45+C"
-      * **CRITICAL**: If the text contains "C45+C", extracted material MUST be "C45+C".
-      * **IGNORE**: "P5K", "P85", "P100", "S355", "S235" -> These are NOT valid.
-      * If multiple valid materials appear (e.g. "C45+C / 1.4301"), output them with a slash.
+      * **CRITICAL**: Normalize ALL C45 variants to "C45+C".
+        - "C45" -> "C45+C"
+        - "C45K" -> "C45+C"
+        - "C45C" -> "C45+C"
+        - "C45+C" -> "C45+C"
+      * **WHITELIST**: Only accepted values are: ["C45+C", "42CrMo4", "1.4301", "1.4305", "1.4571", "1.4404", "1.4057"].
+      * **IGNORE**: "P5K", "P85", "P100", "S355", "S235".
     - dimensions: Object with `width`, `height`, `length` (numeric values).
       * **CRITICAL**: Prioritize dimensions found WITHIN the article string (e.g., "20X12X50" -> Length=50).
       * **CRITICAL**: Handle TOLERANCE SPECS in dimensions: "8H9X7X36" means width=8, H9=tolerance, height=7, length=36.

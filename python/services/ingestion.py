@@ -72,10 +72,10 @@ async def route_ingestion(file_bytes: bytes, mime_type: str, filename: str) -> D
             if len(native_text) > 100:
                 logger.info("Native PDF text detected. Skipping OCR.")
                 return {
-                    "source": "native_pdf",
+                    "source": "hybrid_pdf", # Use hybrid_pdf so main.py processes it correctly
                     "native_text": native_text,
                     "ocr_text": native_text, # Use native as primary
-                    "ocr_tables": [], # No OCR tables in native mode (pdfplumber text handles layout)
+                    "ocr_tables": [], 
                     "mime_type": mime_type
                 }
             
@@ -88,8 +88,8 @@ async def route_ingestion(file_bytes: bytes, mime_type: str, filename: str) -> D
             ocr_tables = ocr_result.get("tables", []) if isinstance(ocr_result, dict) else []
             
             return {
-                "source": "ocr_pdf", # changed from hybrid_pdf since we are exclusively OCR here
-                "native_text": native_text, # Still return partial/garbage native text just in case
+                "source": "hybrid_pdf", # Use hybrid_pdf
+                "native_text": native_text, 
                 "ocr_text": ocr_text,
                 "ocr_tables": ocr_tables,
                 "mime_type": mime_type
