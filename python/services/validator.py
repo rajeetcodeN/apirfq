@@ -103,6 +103,47 @@ def calculate_confidence(item: Dict[str, Any], raw_text_snippet: str) -> float:
         score -= 0.4
         issues.append(f"Form '{form}' matches dimension label pattern")
         
+    # Check for Form/Dimension confusion (e.g., config has Form="B" but text has "B=...")
+    if config.get("form") == "B" and "B=" in raw_text_snippet:
+        score -= 0.4
+        issues.append("Potential Form/Dimension confusion (Form B vs B=Width)")
+
+    # Check for Invalid Materials (Strict Whitelist)
+    # The whitelist logic: If a material is extracted, verify it against known valid codes.
+    VALID_MATERIALS = ["C45", "C45+C", "C45K", "42CrMo4", "1.4301", "1.4305", "1.4571", "1.4404", "1.4057"]
+    mat = config.get("material", "")
+    if mat:
+        # Check if it's a valid slash-separated combo or single value
+        # Normalize by stripping spaces
+        parts = [m.strip() for m in mat.split("/")]
+        # If ANY part is invalid, penalize
+        if not all(p in VALID_MATERIALS for p in parts):
+            score -= 0.3
+            issues.append(f"Invalid material detected: {mat}")
+
+    # Check for Invalid M-Codes (Range M1 - M21)
+    features = config.get("features", [])
+    for feat in features:
+        spec = feat.get("spec", "").strip().upper()
+        if spec.startswith("M"):
+            try:
+                # Extract number part (e.g. "M6" -> 6, "M10X1" -> 10)
+                # Handle standard threads "M6" and fine threads "M10x1"
+                num_part = ""
+                for char in spec[1:]:
+                    if char.isdigit() or char == '.':
+                        num_part += char
+                    else:
+                        break # Stop at 'x' or other non-digit
+                
+                if num_part:
+                    val = float(num_part)
+                    if not (1 <= val <= 21): # Strict Range M1 - M21
+                        score -= 0.3
+                        issues.append(f"M-code out of range (M1-M21): {spec}")
+            except Exception:
+                pass # Ignore parsing errors
+
     # 4. Check for Empty Form if "Form" keyword is in text
     if "Form" in raw_text_snippet and not form:
         score -= 0.1

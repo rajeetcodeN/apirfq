@@ -29,7 +29,11 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
     - standard: Standard or DIN (e.g., "DIN 6885").
     - form: The exact form letter/code (e.g., "A", "B", "C", "AS", "AB").
       * **CRITICAL**: Do NOT confuse dimension labels with the Form. "B=10" means Form is NOT "B".
-    - material: Material grade (e.g., "C45", "C45+C").
+    - material: Material grade.
+      * **WHITELIST**: Only accepted values are: ["C45", "C45+C", "C45K", "42CrMo4", "1.4301", "1.4305", "1.4571", "1.4404", "1.4057"].
+      * **CRITICAL**: If the text contains "C45+C", extracted material MUST be "C45+C", not just "C45".
+      * **IGNORE**: "P5K", "P85", "P100", "S355", "S235" -> These are NOT valid materials for this product.
+      * If multiple valid materials appear (e.g. "C45+C / 1.4301"), output them with a slash.
     - dimensions: Object with `width`, `height`, `length` (numeric values).
       * **CRITICAL**: Prioritize dimensions found WITHIN the article string (e.g., "20X12X50" -> Length=50).
       * **IGNORE** loose numbers that look like material codes (e.g., ignore "100" from "100-013...").
@@ -37,6 +41,7 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
     - features: List of features. Each feature is an object { "feature_type": "...", "spec": "..." }.
       * **CRITICAL**: Extract ALL technical specifications (M-codes, coatings, tolerances).
       * **ALWAYS** extract "M" codes (e.g., "M6") as type "thread"/"bore", even if they appear in the description.
+      * **CONSTRAINT**: Only extract M-codes between M1 and M21. Ignore smaller (e.g. M0.5) or larger (e.g. M30).
       * Example: "PF...-20x12x100-M6" -> features: [{"feature_type": "thread", "spec": "M6"}]
     - weight_per_unit: Weight per single unit if available.
 
