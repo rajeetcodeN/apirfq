@@ -332,16 +332,14 @@ async def process_file(file: UploadFile = File(...)):
         }
         
         # 5. Cross-validate with n8n results (n8n_task was started in parallel earlier)
-        
-        # 5. Cross-validate with n8n results
+        # We wait MAX 120 seconds for n8n (User requested > 200s capability for large file holistic processing).
         try:
-            # User Requested MAX 1.5 minutes (90s) for n8n
-            n8n_data = await asyncio.wait_for(n8n_task, timeout=90.0)
+            n8n_data = await asyncio.wait_for(n8n_task, timeout=120.0)
             if n8n_data and "requested_items" in ai_data:
                 ai_data["requested_items"] = cross_validate(ai_data["requested_items"], n8n_data)
                 logger.info("n8n cross-validation complete")
         except asyncio.TimeoutError:
-            logger.warning(f"n8n cross-validation TIMED OUT (>90s): Returning AI data without cross-check.")
+            logger.warning(f"n8n cross-validation TIMED OUT (>120s): Returning AI data without cross-check.")
         except Exception as e:
             logger.warning(f"n8n cross-validation skipped: {e}")
         

@@ -174,7 +174,7 @@ def extract_data_from_text(text: str, native_text: str = None, user_feedback: st
             f"{MISTRAL_API_BASE}/chat/completions",
             headers=headers,
             json=payload,
-            timeout=120  # 2 minute timeout (Python can handle it)
+            timeout=240  # 4 minute timeout for very large files (>200s requested)
         )
         
         response.raise_for_status()
