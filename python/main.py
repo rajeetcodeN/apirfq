@@ -308,7 +308,8 @@ async def process_file(file: UploadFile = File(...)):
         # 3. AI Extraction
         try:
             audit_service.log_event("AI_PROCESSING_START", file.filename, "STARTED")
-            ai_data = extract_data_from_text(masked_text, native_text=native_text)
+            # CHANGED: Use async wrapper for parallel chunking of large docs
+            ai_data = await extract_data_from_text_async(masked_text, native_text=native_text)
             logger.info("AI extraction successful.")
             audit_service.log_event("AI_PROCESSING_COMPLETE", file.filename, "SUCCESS")
         except Exception as e:

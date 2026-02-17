@@ -147,10 +147,11 @@ def extract_data_from_text(text: str, native_text: str = None, user_feedback: st
         logger.info(f"Injecting user feedback: {user_feedback}")
         feedback_instruction = f"\n\n\U0001f6a8 USER FEEDBACK / MANUAL OVERRIDE:\nThe user has manually reviewed the previous output and provided this specific correction instruction:\n'{user_feedback}'\n\nYOU MUST FOLLOW THIS INSTRUCTION ABOVE ALL OTHER RULES."
         
-    # Detect column headers from the document
-    column_hint = detect_column_headers(text)
-    if column_hint:
-        logger.info("Column headers detected and injected into prompt")
+    # Detect column headers from the document (DISABLED per user request "drop or pause column detector")
+    # column_hint = detect_column_headers(text)
+    # if column_hint:
+    #     logger.info("Column headers detected and injected into prompt")
+    column_hint = ""  # Force empty for now
         
     system_prompt_with_context = SYSTEM_PROMPT.replace("{LEARNED_CONTEXT}", learned_context + feedback_instruction + column_hint)
     
@@ -160,7 +161,7 @@ def extract_data_from_text(text: str, native_text: str = None, user_feedback: st
     }
     
     payload = {
-        "model": "mistral-small-latest",
+        "model": "mistral-small-latest", # Switching back to Small (User: "small is fast")
         "messages": [
             {"role": "system", "content": system_prompt_with_context},
             {"role": "user", "content": USER_PROMPT_TEMPLATE.replace("{TEXT}", text)}
@@ -250,3 +251,85 @@ def extract_data_from_text(text: str, native_text: str = None, user_feedback: st
     except Exception as e:
         logger.error(f"Mistral API Error: {e}")
         raise e
+
+import asyncio
+
+async def extract_data_from_text_async(text: str, native_text: str = None, user_feedback: str = None) -> Dict[str, Any]:
+    """
+    Async wrapper for extraction.
+    Implements PARALLEL CHUNKING for large documents (>100 lines ~ 20 items).
+    """
+    if not text:
+        raise ValueError("No text provided")
+
+    lines = text.split('\n')
+    line_count = len(lines)
+    
+    # Threshold for chunking: 100 lines (approx 15-20 items depending on density)
+    # If smaller, just run normally (blocking call in thread executor to avoid blocking main loop)
+    if line_count < 100:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, extract_data_from_text, text, native_text, user_feedback)
+
+    # --- CHUNKING LOGIC ---
+    logger.info(f"Large document detected ({line_count} lines). Splitting into 2 chunks for PARALLEL processing.")
+    
+    midpoint = line_count // 2
+    
+    # Try to find a clean break (empty line) near midpoint to avoid cutting an item
+    # Search 10 lines up/down
+    split_idx = midpoint
+    for offset in range(15):
+        # Check forward
+        if midpoint + offset < line_count and not lines[midpoint + offset].strip():
+            split_idx = midpoint + offset
+            break
+        # Check backward
+        if midpoint - offset > 0 and not lines[midpoint - offset].strip():
+            split_idx = midpoint - offset
+            break
+            
+    chunk1_text = '\n'.join(lines[:split_idx])
+    chunk2_text = '\n'.join(lines[split_idx:])
+    
+    logger.info(f"Chunk 1: {len(chunk1_text)} chars. Chunk 2: {len(chunk2_text)} chars. Launching parallel tasks...")
+    
+    loop = asyncio.get_event_loop()
+    
+    # Launch parallel tasks
+    # Note: We must pass native_text=None to chunks because mapping native text line-by-line is hard/risk.
+    # The merged result will validate against the FULL native_text if available in the Validator later.
+    task1 = loop.run_in_executor(None, extract_data_from_text, chunk1_text, None, user_feedback)
+    task2 = loop.run_in_executor(None, extract_data_from_text, chunk2_text, None, user_feedback)
+    
+    results = await asyncio.gather(task1, task2, return_exceptions=True)
+    
+    # Process results
+    merged_items = []
+    
+    for i, res in enumerate(results):
+        if isinstance(res, Exception):
+            logger.error(f"Chunk {i+1} failed: {res}")
+            # Identify it but continue if possible? No, probably better to fail or warn.
+            # If one chunk fails, we return partial?
+            continue
+        
+        if isinstance(res, dict) and "requested_items" in res:
+            merged_items.extend(res["requested_items"])
+            
+    # Sort merged items by Position (just in case they got mixed or AI restarted numbering)
+    # AI prompt says "Maintain original numbering".
+    # We trust the 'pos' field.
+    try:
+        # Filter out items without pos
+        valid_items = [i for i in merged_items if str(i.get('pos','')).isdigit()]
+        others = [i for i in merged_items if not str(i.get('pos','')).isdigit()]
+        
+        valid_items.sort(key=lambda x: float(x['pos']))
+        merged_items = valid_items + others
+    except Exception as e:
+        logger.warning(f"Could not sort merged items by pos: {e}")
+
+    logger.info(f"Parallel chunking complete. Merged {len(merged_items)} items.")
+    
+    return {"requested_items": merged_items}

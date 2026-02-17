@@ -1,5 +1,5 @@
 
-import fitz  # PyMuPDF
+import pdfplumber  # Superior table extraction
 import logging
 import io
 import pandas as pd
@@ -15,14 +15,14 @@ class InsufficientTextError(Exception):
     pass
 
 def ingest_pdf_native(file_bytes: bytes) -> str:
-    """Extracts text natively from a PDF file using PyMuPDF."""
+    """Extracts text natively from a PDF file using pdfplumber."""
     try:
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
         full_text = ""
-        for page_num, page in enumerate(doc):
-            text = page.get_text()
-            full_text += f"--- Page {page_num + 1} ---\n{text}\n\n"
-        doc.close()
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            for i, page in enumerate(pdf.pages):
+                # extract_text(layout=True) is key for preserving table structure
+                text = page.extract_text(layout=True) or ""
+                full_text += f"--- Page {i + 1} ---\n{text}\n\n"
         
         trimmed_text = full_text.strip()
         return trimmed_text
@@ -62,13 +62,25 @@ async def route_ingestion(file_bytes: bytes, mime_type: str, filename: str) -> D
     try:
         # 1. PDF
         if mime_type == 'application/pdf' or extension == 'pdf':
-            # Dual Extraction Strategy for Hybrid Accuracy
+            # STRATEGY: Native Extraction FIRST (Fast, Accurate). Fallback to OCR if scanned (slow).
             
-            # 1. Native Extraction (Fast, Character-Perfect)
+            # 1. Native Extraction (pdfplumber)
             native_text = ingest_pdf_native(file_bytes)
             
-            # 2. Mistral OCR (Slow, Layout-Perfect)
-            # We enforce OCR now to ensure optimal AI comprehension of tables
+            # Check if text is sufficient (not scanned/image)
+            # Threshold: < 50 chars total usually means scanned image or empty
+            if len(native_text) > 100:
+                logger.info("Native PDF text detected. Skipping OCR.")
+                return {
+                    "source": "native_pdf",
+                    "native_text": native_text,
+                    "ocr_text": native_text, # Use native as primary
+                    "ocr_tables": [], # No OCR tables in native mode (pdfplumber text handles layout)
+                    "mime_type": mime_type
+                }
+            
+            # 2. Mistral OCR Fallback (Slow, Layout-Perfect)
+            logger.info("Insufficient native text detected. Falling back to Mistral OCR...")
             ocr_result = perform_mistral_ocr(file_bytes, filename)
             
             # ocr_result is now a dict: {text, tables, page_count}
@@ -76,8 +88,8 @@ async def route_ingestion(file_bytes: bytes, mime_type: str, filename: str) -> D
             ocr_tables = ocr_result.get("tables", []) if isinstance(ocr_result, dict) else []
             
             return {
-                "source": "hybrid_pdf",
-                "native_text": native_text,
+                "source": "ocr_pdf", # changed from hybrid_pdf since we are exclusively OCR here
+                "native_text": native_text, # Still return partial/garbage native text just in case
                 "ocr_text": ocr_text,
                 "ocr_tables": ocr_tables,
                 "mime_type": mime_type

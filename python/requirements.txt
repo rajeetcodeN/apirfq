@@ -13,3 +13,4 @@ phonenumbers
 tabulate
 xlrd
 httpx
+pdfplumber
