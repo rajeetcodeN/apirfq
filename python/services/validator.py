@@ -66,21 +66,31 @@ def fix_material(material: str) -> str:
 
 def parse_dimensions_from_string(text: str) -> Optional[Dict[str, float]]:
     """
-    Extracts dimensions (LxWxH or WxHxL) from a string like '20x12x50'.
+    Extracts dimensions (WxHxL) from a string like '20x12x50' or '8H9x7x36'.
+    Handles tolerance specs embedded in dimensions (e.g., 8H9 = width 8 + H9 tolerance).
     Returns {width, height, length} or None.
-    Assumes standard format: 'Width x Height x Length' or 'Dimension x Dimension x Dimension'.
     """
-    # Pattern for 3 dimensions: 20x12x100 or 20X12X100
-    # Allow spaces: 20 x 12 x 100
-    pattern_3d = r'(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)'
+    # First try: Tolerance-aware pattern for cases like 8H9X7X36
+    # Pattern: digit(s) + optional tolerance (H7, H9, h9, etc.) + X + digits + X + digits
+    pattern_tolerance_3d = r'(\d+(?:[.,]\d+)?)[hH]\d+\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)'
+    match = re.search(pattern_tolerance_3d, text)
+    if match:
+        try:
+            dims = [float(d.replace(',', '.')) for d in match.groups()]
+            return {
+                "width": dims[0],
+                "height": dims[1],
+                "length": dims[2]
+            }
+        except ValueError:
+            pass
     
+    # Standard 3D pattern: 20x12x100 or 20X12X100
+    pattern_3d = r'(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)'
     match = re.search(pattern_3d, text)
     if match:
         try:
             dims = [float(d.replace(',', '.')) for d in match.groups()]
-            # Heuristic: Largest dimension is usually Length (unless specified otherwise)
-            # But standard notation is often Width x Height x Length for keys vs bars.
-            # Let's trust the sequence: Width, Height, Length
             return {
                 "width": dims[0],
                 "height": dims[1],
@@ -98,7 +108,7 @@ def parse_dimensions_from_string(text: str) -> Optional[Dict[str, float]]:
             return {
                 "width": dims[0],
                 "height": dims[1],
-                "length": None # Missing length
+                "length": None
             }
         except ValueError:
             pass
@@ -107,20 +117,31 @@ def parse_dimensions_from_string(text: str) -> Optional[Dict[str, float]]:
 
 def extract_features_from_string(text: str) -> List[Dict[str, str]]:
     """
-    Extracts explicit features like M-codes (M6) from the string.
+    Extracts explicit features from the string:
+    - M-codes (M4, M6, M8)
+    - H-tolerances (H7, H9)
+    - NZG (Nutenzugabe / groove allowance)
     """
     features = []
     
     # M-Code Pattern: M followed by digits (e.g., M6, M8, M10)
-    # Using \b boundary to avoid matching inside other words, but typically M6 is standalone or hyphenated (-M6)
-    # Handle -M6 pattern specifically or just M6
     m_code_pattern = r'(?:^|[\s\-])(M\d+)(?:[\s\-]|$)'
-    
     m_matches = re.findall(m_code_pattern, text, re.IGNORECASE)
     for code in m_matches:
-        # Avoid duplicates
         if not any(f['spec'] == code.upper() for f in features):
             features.append({"feature_type": "thread", "spec": code.upper()})
+    
+    # H-Tolerance Pattern: H followed by digits (e.g., H7, H9) — ISO fit tolerance
+    h_tol_pattern = r'(?:^|[\s\-\d])(H\d+)(?=[xX\s\-]|$)'
+    h_matches = re.findall(h_tol_pattern, text)
+    for code in h_matches:
+        if not any(f['spec'] == code.upper() for f in features):
+            features.append({"feature_type": "tolerance", "spec": code.upper()})
+    
+    # NZG Pattern: Nutenzugabe (groove allowance)
+    if re.search(r'(?:^|[\s\-])NZG(?:[\s\-;,]|$)', text, re.IGNORECASE):
+        if not any(f['spec'] == 'NZG' for f in features):
+            features.append({"feature_type": "groove_allowance", "spec": "NZG"})
             
     return features
 

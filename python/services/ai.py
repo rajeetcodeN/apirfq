@@ -42,13 +42,19 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
       * If multiple valid materials appear (e.g. "C45+C / 1.4301"), output them with a slash.
     - dimensions: Object with `width`, `height`, `length` (numeric values).
       * **CRITICAL**: Prioritize dimensions found WITHIN the article string (e.g., "20X12X50" -> Length=50).
+      * **CRITICAL**: Handle TOLERANCE SPECS in dimensions: "8H9X7X36" means width=8, H9=tolerance, height=7, length=36.
+        - The tolerance letter+number (H7, H9, h9) is NOT a dimension — it's a feature.
+        - Example: "8H9X7X36" -> dimensions: {width:8, height:7, length:36}, feature: {type:"tolerance", spec:"H9"}
       * **IGNORE** loose numbers that look like material codes (e.g., ignore "100" from "100-013...").
       * Example: "B=10 H=8 T=16" -> {width: 10, height: 8, length: 16}.
     - features: List of features. Each feature is an object { "feature_type": "...", "spec": "..." }.
       * **CRITICAL**: Extract ALL technical specifications (M-codes, coatings, tolerances).
       * **ALWAYS** extract "M" codes (e.g., "M6") as type "thread"/"bore", even if they appear in the description.
       * **CONSTRAINT**: Only extract M-codes between M1 and M21. Ignore smaller (e.g. M0.5) or larger (e.g. M30).
+      * Extract H-tolerances (H7, H9) -> type "tolerance"
+      * Extract NZG (Nutenzugabe/groove allowance) -> type "groove_allowance"
       * Example: "PF...-20x12x100-M6" -> features: [{"feature_type": "thread", "spec": "M6"}]
+      * Example: "AS-8H9X7X36-M4-NZG" -> features: [{type:"thread",spec:"M4"},{type:"tolerance",spec:"H9"},{type:"groove_allowance",spec:"NZG"}]
     - weight_per_unit: Weight per single unit if available.
 
 article_name: **CONSTRUCT** this field *AFTER* extracting config. Use this strict format:
