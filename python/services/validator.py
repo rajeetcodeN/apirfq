@@ -138,10 +138,10 @@ def extract_features_from_string(text: str) -> List[Dict[str, str]]:
         if not any(f['spec'] == code.upper() for f in features):
             features.append({"feature_type": "tolerance", "spec": code.upper()})
     
-    # NZG Pattern: Nutenzugabe (groove allowance)
+    # NZG Pattern: Nutenzugabe (groove allowance) -> Map to "coating" as requested
     if re.search(r'(?:^|[\s\-])NZG(?:[\s\-;,]|$)', text, re.IGNORECASE):
         if not any(f['spec'] == 'NZG' for f in features):
-            features.append({"feature_type": "groove_allowance", "spec": "NZG"})
+            features.append({"feature_type": "coating", "spec": "NZG"})
             
     return features
 
