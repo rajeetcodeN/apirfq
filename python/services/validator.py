@@ -5,6 +5,65 @@ from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# ── Material Auto-Correction ──────────────────────────────────────────────────
+VALID_MATERIALS = ["C45", "C45+C", "C45K", "42CrMo4", "1.4301", "1.4305", "1.4571", "1.4404", "1.4057"]
+
+# Known bad -> correct mappings
+MATERIAL_FIX_MAP = {
+    "P5K": "C45K",
+    "P5C": "C45+C",
+    "C45C": "C45+C",
+    "P85-C45K": "C45K",
+    "P885-C45C": "C45+C",
+    "P885-C45+C": "C45+C",
+    "P85-C45+C": "C45+C",
+    "P85-C45C": "C45+C",
+}
+
+def fix_material(material: str) -> str:
+    """
+    Auto-corrects known bad material values.
+    1. Check exact match in fix map
+    2. Try cleaning P-prefixes
+    3. Return original if already valid
+    """
+    if not material:
+        return material
+    
+    # 1. Exact match in known fixes
+    if material in MATERIAL_FIX_MAP:
+        fixed = MATERIAL_FIX_MAP[material]
+        logger.info(f"Material auto-corrected: '{material}' -> '{fixed}'")
+        return fixed
+    
+    # 2. Already valid? Return as-is
+    if material in VALID_MATERIALS:
+        return material
+    
+    # 3. Try stripping common P-prefixes and re-checking
+    cleaned = material
+    for prefix in ["P885-", "P85-", "PF-", "P5", "P8"]:
+        if cleaned.upper().startswith(prefix.upper()):
+            cleaned = cleaned[len(prefix):]
+            break
+    
+    # Check if cleaned version is valid
+    if cleaned in VALID_MATERIALS:
+        logger.info(f"Material auto-corrected: '{material}' -> '{cleaned}'")
+        return cleaned
+    
+    # 4. Check if it's "C45C" style (missing +)
+    if re.match(r'^C45[A-Z]?$', cleaned, re.IGNORECASE):
+        if cleaned.upper() == "C45C":
+            logger.info(f"Material auto-corrected: '{material}' -> 'C45+C'")
+            return "C45+C"
+        elif cleaned.upper() == "C45K":
+            return "C45K"
+    
+    # 5. Nothing worked, return original (validator will penalize confidence)
+    logger.warning(f"Unknown material '{material}' - could not auto-correct")
+    return material
+
 def parse_dimensions_from_string(text: str) -> Optional[Dict[str, float]]:
     """
     Extracts dimensions (LxWxH or WxHxL) from a string like '20x12x50'.
@@ -224,6 +283,19 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             
             config["features"] = current_features
             item["config"] = config
+            
+            # 3b. FIX MATERIAL (Hard auto-correct known bad values)
+            raw_material = config.get("material", "")
+            if raw_material:
+                fixed_material = fix_material(raw_material)
+                if fixed_material != raw_material:
+                    config["material"] = fixed_material
+                    item["config"] = config
+                    # Also fix article_name if it contains the bad material
+                    article_name = item.get("article_name", "")
+                    if raw_material in article_name:
+                        item["article_name"] = article_name.replace(raw_material, fixed_material)
+                    item["metadata"]["material_auto_corrected"] = f"{raw_material} -> {fixed_material}"
             
             # 4. CALCULATE CONFIDENCE
             confidence = calculate_confidence(item, text_to_scan)

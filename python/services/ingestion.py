@@ -69,12 +69,17 @@ async def route_ingestion(file_bytes: bytes, mime_type: str, filename: str) -> D
             
             # 2. Mistral OCR (Slow, Layout-Perfect)
             # We enforce OCR now to ensure optimal AI comprehension of tables
-            ocr_text = perform_mistral_ocr(file_bytes, filename)
+            ocr_result = perform_mistral_ocr(file_bytes, filename)
+            
+            # ocr_result is now a dict: {text, tables, page_count}
+            ocr_text = ocr_result["text"] if isinstance(ocr_result, dict) else ocr_result
+            ocr_tables = ocr_result.get("tables", []) if isinstance(ocr_result, dict) else []
             
             return {
                 "source": "hybrid_pdf",
                 "native_text": native_text,
                 "ocr_text": ocr_text,
+                "ocr_tables": ocr_tables,
                 "mime_type": mime_type
             }
 
@@ -95,8 +100,10 @@ async def route_ingestion(file_bytes: bytes, mime_type: str, filename: str) -> D
 
         # 5. Images (JPG, PNG, TIFF) - Use Mistral OCR directly
         if mime_type.startswith('image/') or extension in ['jpg', 'jpeg', 'png', 'tiff', 'tif', 'bmp']:
-            text = perform_mistral_ocr(file_bytes, filename)
-            return {"raw_data": text, "source": "mistral_ocr", "mime_type": mime_type}
+            ocr_result = perform_mistral_ocr(file_bytes, filename)
+            text = ocr_result["text"] if isinstance(ocr_result, dict) else ocr_result
+            tables = ocr_result.get("tables", []) if isinstance(ocr_result, dict) else []
+            return {"raw_data": text, "ocr_tables": tables, "source": "mistral_ocr", "mime_type": mime_type}
 
         raise ValueError(f"Unsupported file type: {extension}")
 

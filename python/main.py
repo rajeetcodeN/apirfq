@@ -159,9 +159,21 @@ async def process_file(file: UploadFile = File(...)):
             if source == "hybrid_pdf":
                 raw_text = ingestion_result["ocr_text"]   # Primary for AI/Masking
                 native_text = ingestion_result["native_text"] # Secondary for Validator
+                ocr_tables = ingestion_result.get("ocr_tables", [])
             else:
                 raw_text = ingestion_result["raw_data"]
                 native_text = None
+                ocr_tables = ingestion_result.get("ocr_tables", [])
+
+            # If structured tables were extracted, append them to the text
+            # This gives the AI clean, column-labeled data to work with
+            if ocr_tables:
+                table_section = "\n\n=== STRUCTURED TABLES (extracted by OCR) ===\n"
+                for i, tbl in enumerate(ocr_tables):
+                    table_section += f"\n--- Table {i+1} (Page {tbl.get('page', '?')}) ---\n"
+                    table_section += tbl["markdown"] + "\n"
+                raw_text += table_section
+                logger.info(f"Appended {len(ocr_tables)} structured tables to raw text")
 
             logger.info(f"Ingestion complete. Source: {source}, Length: {len(raw_text)}")
             
