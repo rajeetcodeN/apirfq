@@ -138,11 +138,18 @@ def calculate_confidence(item: Dict[str, Any], raw_text_snippet: str) -> float:
     if not raw_text_snippet:
         return 0.5 # Default low confidence if no text to check against
     
-    # 1. Check for Missing Dimensions if they seem present in text
-    dims_in_text = parse_dimensions_from_string(raw_text_snippet)
-    dims_in_json = config.get("dimensions", {})
+    # 1. Check for NULL / Empty Dimensions (Passfeder MUST have dimensions)
+    dims_in_json = config.get("dimensions", {}) or {}
+    has_any_dim = any(v is not None and v != 0 for v in dims_in_json.values()) if dims_in_json else False
     
-    if dims_in_text and not dims_in_json:
+    if not has_any_dim:
+        score -= 0.4
+        issues.append("All dimensions are null/empty - Passfeder must have dimensions")
+    
+    # 1b. Check for Missing Dimensions if they seem present in text
+    dims_in_text = parse_dimensions_from_string(raw_text_snippet)
+    
+    if dims_in_text and not has_any_dim:
         score -= 0.3
         issues.append("Dimensions found in text but missed in JSON")
         
@@ -246,6 +253,16 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                         logger.info(f"Validator: Found raw line for Pos {pos}: {target_line.strip()[:50]}...")
                         break
             
+            # Try searching by material_id (more unique than pos number)
+            if not target_line:
+                mat_id = config.get("material_id", "")
+                if mat_id and len(mat_id) > 5:
+                    for line in source_lines:
+                        if mat_id in line:
+                            target_line = line
+                            logger.info(f"Validator: Found raw line by material_id for Pos {pos}: {target_line.strip()[:50]}...")
+                            break
+            
             if not target_line and article_name_ai:
                  parts = article_name_ai.split('-')
                  significant_parts = [p for p in parts if len(p) > 3]
@@ -255,10 +272,21 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                          target_line = line
                          break
             
-            text_to_scan = target_line if target_line else article_name_ai
+            # If we still couldn't find the raw line, flag it
+            used_fallback = False
+            if target_line:
+                text_to_scan = target_line
+            elif article_name_ai:
+                text_to_scan = article_name_ai
+                used_fallback = True
+                logger.warning(f"Validator: Could not find raw line for Pos {pos}, falling back to article_name (unreliable)")
+            else:
+                text_to_scan = ""
             
             # Store raw text snippet for the Verifier/Learner later
             item["metadata"]["raw_text_snippet"] = text_to_scan
+            if used_fallback:
+                item["metadata"]["snippet_is_fallback"] = True
             
             if not text_to_scan:
                 # Default high confidence if we can't find source text to invalidate it?
@@ -299,6 +327,12 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             
             # 4. CALCULATE CONFIDENCE
             confidence = calculate_confidence(item, text_to_scan)
+            
+            # Extra penalty if we couldn't find the real raw line
+            if used_fallback:
+                confidence = min(confidence, 0.6)
+                item["metadata"]["status"] = "raw_line_not_found"
+            
             item["metadata"]["rule_confidence_score"] = confidence
             
         except Exception as e:

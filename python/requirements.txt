@@ -12,3 +12,4 @@ python-docx
 phonenumbers
 tabulate
 xlrd
+httpx

@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
+import httpx
+import asyncio
 
 # Load env - check current dir first (Docker), then parent dir (local dev)
 import pathlib
@@ -29,6 +31,101 @@ app = FastAPI(title="RFQ Intelligence Backend", version="1.0.0")
 
 # Instantiate Services
 correction_service = CorrectionService()
+
+# n8n Webhook for parallel safety extraction
+N8N_WEBHOOK_URL = "https://nosta.app.n8n.cloud/webhook/60573ec2-ab96-4470-9c3c-dcba96c5264e"
+
+async def send_to_n8n(file_bytes: bytes, filename: str) -> dict:
+    """Send raw file to n8n webhook and wait for extracted data response."""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            files = {"file": (filename, file_bytes)}
+            response = await client.post(N8N_WEBHOOK_URL, files=files)
+            logger.info(f"n8n webhook response: {response.status_code}")
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.warning(f"n8n returned non-200: {response.status_code}")
+                return None
+    except Exception as e:
+        logger.warning(f"n8n webhook failed (non-critical): {e}")
+        return None
+
+def cross_validate(our_items: list, n8n_data: dict) -> list:
+    """
+    Compare our extraction with n8n's extraction.
+    Flag mismatches on key fields: quantity, material, dimensions.
+    """
+    if not n8n_data:
+        return our_items
+    
+    # Try to get n8n items - adapt to whatever format n8n returns
+    n8n_items = []
+    if isinstance(n8n_data, list):
+        n8n_items = n8n_data
+    elif isinstance(n8n_data, dict):
+        n8n_items = n8n_data.get("items", n8n_data.get("requested_items", n8n_data.get("data", [])))
+        if isinstance(n8n_items, dict):
+            n8n_items = n8n_items.get("requested_items", [])
+    
+    if not n8n_items:
+        logger.info("n8n cross-validation: No items from n8n to compare")
+        return our_items
+    
+    logger.info(f"n8n cross-validation: Comparing {len(our_items)} our items vs {len(n8n_items)} n8n items")
+    
+    # Build n8n lookup by position
+    n8n_by_pos = {}
+    for item in n8n_items:
+        pos = str(item.get("pos", item.get("position", ""))).strip()
+        if pos:
+            n8n_by_pos[pos] = item
+    
+    for item in our_items:
+        pos = str(item.get("pos", "")).strip()
+        n8n_item = n8n_by_pos.get(pos)
+        
+        if not n8n_item:
+            continue
+        
+        mismatches = []
+        config = item.get("config", {})
+        n8n_config = n8n_item.get("config", n8n_item)  # n8n might not nest under config
+        
+        # Compare quantity
+        our_qty = item.get("quantity")
+        n8n_qty = n8n_item.get("quantity", n8n_item.get("menge"))
+        if our_qty and n8n_qty and str(our_qty) != str(n8n_qty):
+            mismatches.append(f"quantity: ours={our_qty} vs n8n={n8n_qty}")
+        
+        # Compare material
+        our_mat = config.get("material", "")
+        n8n_mat = n8n_config.get("material", "")
+        if our_mat and n8n_mat and our_mat.lower() != str(n8n_mat).lower():
+            mismatches.append(f"material: ours={our_mat} vs n8n={n8n_mat}")
+        
+        # Compare dimensions
+        our_dims = config.get("dimensions", {}) or {}
+        n8n_dims = n8n_config.get("dimensions", {}) or {}
+        if our_dims and n8n_dims:
+            for key in ["width", "height", "length"]:
+                ov = our_dims.get(key)
+                nv = n8n_dims.get(key)
+                if ov and nv and str(ov) != str(nv):
+                    mismatches.append(f"{key}: ours={ov} vs n8n={nv}")
+        
+        # Apply results
+        if mismatches:
+            if "metadata" not in item:
+                item["metadata"] = {}
+            item["metadata"]["n8n_mismatches"] = mismatches
+            item["metadata"]["n8n_flag"] = True
+            # Lower confidence for mismatched items
+            current_conf = item["metadata"].get("rule_confidence_score", 1.0)
+            item["metadata"]["rule_confidence_score"] = min(current_conf, 0.5)
+            logger.warning(f"Pos {pos}: n8n mismatch detected: {mismatches}")
+    
+    return our_items
 
 # Models
 class CorrectionRequest(BaseModel):
@@ -148,6 +245,9 @@ async def process_file(file: UploadFile = File(...)):
         # Read file bytes
         file_bytes = await file.read()
         
+        # Start n8n extraction in parallel (runs while our pipeline processes)
+        n8n_task = asyncio.create_task(send_to_n8n(file_bytes, file.filename))
+        
         # 1. Ingestion
         try:
             audit_service.log_event("INGESTION_START", file.filename, "STARTED", {"size_bytes": len(file_bytes), "mime_type": file.content_type})
@@ -156,17 +256,26 @@ async def process_file(file: UploadFile = File(...)):
             source = ingestion_result["source"]
             
             # Handle Hybrid PDF logic
+            # STRATEGY: Use native text as PRIMARY (clean, character-perfect - same as n8n)
+            # Fall back to OCR only for scanned PDFs with no text layer
             if source == "hybrid_pdf":
-                raw_text = ingestion_result["ocr_text"]   # Primary for AI/Masking
-                native_text = ingestion_result["native_text"] # Secondary for Validator
+                native_text = ingestion_result["native_text"]
+                ocr_text = ingestion_result["ocr_text"]
                 ocr_tables = ingestion_result.get("ocr_tables", [])
+                
+                # Use native text if it has enough content (like n8n does)
+                if native_text and len(native_text.strip()) > 100:
+                    raw_text = native_text
+                    logger.info("Using NATIVE text as primary (character-perfect)")
+                else:
+                    raw_text = ocr_text
+                    logger.info("Using OCR text as primary (scanned PDF, no native text layer)")
             else:
                 raw_text = ingestion_result["raw_data"]
                 native_text = None
                 ocr_tables = ingestion_result.get("ocr_tables", [])
 
-            # If structured tables were extracted, append them to the text
-            # This gives the AI clean, column-labeled data to work with
+            # If structured tables were extracted by OCR, append as supplementary data
             if ocr_tables:
                 table_section = "\n\n=== STRUCTURED TABLES (extracted by OCR) ===\n"
                 for i, tbl in enumerate(ocr_tables):
@@ -224,6 +333,17 @@ async def process_file(file: UploadFile = File(...)):
                 "tokens_masked": len(token_map)
             }
         }
+        
+        # 5. Cross-validate with n8n results (n8n_task was started in parallel earlier)
+        
+        # 5. Cross-validate with n8n results
+        try:
+            n8n_data = await n8n_task
+            if n8n_data and "requested_items" in ai_data:
+                ai_data["requested_items"] = cross_validate(ai_data["requested_items"], n8n_data)
+                logger.info("n8n cross-validation complete")
+        except Exception as e:
+            logger.warning(f"n8n cross-validation skipped: {e}")
         
         return response_payload
 
