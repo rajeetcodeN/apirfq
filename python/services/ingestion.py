@@ -91,33 +91,33 @@ async def route_ingestion(file_bytes: bytes, mime_type: str, filename: str) -> D
     try:
         # 1. PDF
         if mime_type == 'application/pdf' or extension == 'pdf':
-            # STRATEGY: Native Extraction FIRST (Fast, Accurate). Fallback to OCR if scanned (slow).
+            # STRATEGY: Mistral OCR ALWAYS (Primary). Native Text (Secondary/Backup).
+            # User reverted "Native First" due to accuracy issues.
             
             # 1. Native Extraction (pdfplumber) - Returns (text, tables)
-            native_text, native_tables = ingest_pdf_native(file_bytes)
-            
-            # Check if text is sufficient (not scanned/image)
-            # Threshold: < 50 chars total usually means scanned image or empty
-            if len(native_text) > 100:
-                logger.info(f"Native PDF text detected. Skipping OCR. Found {len(native_tables)} tables.")
-                return {
-                    "source": "hybrid_pdf", # Use hybrid_pdf so main.py processes it correctly
-                    "native_text": native_text,
-                    "ocr_text": native_text, # Use native as primary
-                    "ocr_tables": native_tables, # Pass structured tables to AI
-                    "mime_type": mime_type
-                }
-            
-            # 2. Mistral OCR Fallback (Slow, Layout-Perfect)
-            logger.info("Insufficient native text detected. Falling back to Mistral OCR...")
+            # We still keep this for the Validator (regex check on native text)
+            try:
+                native_text, native_tables = ingest_pdf_native(file_bytes)
+            except Exception as e:
+                logger.warning(f"Native extraction failed: {e}")
+                native_text, native_tables = "", []
+
+            # 2. Mistral OCR (Primary)
+            # Always run OCR to ensure layout perfection and table accuracy
+            logger.info("Running Mistral OCR (Primary Strategy)...")
             ocr_result = perform_mistral_ocr(file_bytes, filename)
             
             # ocr_result is now a dict: {text, tables, page_count}
             ocr_text = ocr_result["text"] if isinstance(ocr_result, dict) else ocr_result
             ocr_tables = ocr_result.get("tables", []) if isinstance(ocr_result, dict) else []
+
+            # FALLBACK: If OCR misses tables, use Native Tables (pdfplumber)
+            if not ocr_tables and native_tables:
+                logger.info(f"Mistral OCR found no tables. Falling back to {len(native_tables)} native tables.")
+                ocr_tables = native_tables
             
             return {
-                "source": "hybrid_pdf", # Use hybrid_pdf
+                "source": "hybrid_pdf",
                 "native_text": native_text, 
                 "ocr_text": ocr_text,
                 "ocr_tables": ocr_tables,

@@ -185,6 +185,7 @@ def extract_data_from_text(text: str, native_text: str = None, user_feedback: st
         
         result = response.json()
         content = result['choices'][0]['message']['content']
+        logger.info(f"DEBUG: AI Response Content (First 500 chars): {content[:500]}...")
         
         if not content:
             raise ValueError("Empty response from AI")

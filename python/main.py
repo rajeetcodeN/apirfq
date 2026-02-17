@@ -282,6 +282,10 @@ async def process_file(file: UploadFile = File(...)):
                 logger.info(f"Appended {len(ocr_tables)} structured tables to raw text")
 
             logger.info(f"Ingestion complete. Source: {source}, Length: {len(raw_text)}")
+            if ocr_tables:
+                logger.info(f"DEBUG: First 500 chars of raw text (with appended tables):\n{raw_text[:500]}...")
+            else:
+                logger.info(f"DEBUG: No structured tables found. Raw text preview:\n{raw_text[:200]}...")
             
             audit_service.log_event("INGESTION_COMPLETE", file.filename, "SUCCESS", {"source": source, "extracted_chars": len(raw_text)})
         except Exception as e:
