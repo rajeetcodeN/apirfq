@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import asyncio
 import requests
 from typing import Dict, Any, Optional
 from services.validator import validate_and_fix_items
@@ -249,8 +250,6 @@ def extract_data_from_text(text: str, native_text: str = None, user_feedback: st
     except Exception as e:
         logger.error(f"Mistral API Error: {e}")
         raise e
-
-import asyncio
 
 async def extract_data_from_text_async(text: str, native_text: str = None, user_feedback: str = None) -> Dict[str, Any]:
     """

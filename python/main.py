@@ -19,7 +19,7 @@ load_dotenv(dotenv_path=str(env_path))
 
 from services.ingestion import route_ingestion
 from services.masking import process_document
-from services.ai import extract_data_from_text
+from services.ai import extract_data_from_text, extract_data_from_text_async
 from services.audit import audit_service
 from services.correction_service import CorrectionService
 
