@@ -86,6 +86,29 @@ def cross_validate(our_items: list, n8n_data: dict) -> list:
         logger.info("n8n cross-validation: No items from n8n to compare")
         return our_items
     
+    # ULTIMATE FALLBACK: If AI returned 0 items but n8n found items, use n8n items.
+    if not our_items and n8n_items:
+        logger.warning(f"AI returned NO items, but n8n found {len(n8n_items)} items. ULTIMATE FALLBACK: Using n8n data as primary.")
+        # Mark items as fallback
+        for item in n8n_items:
+            if "metadata" not in item: item["metadata"] = {}
+            item["metadata"]["source"] = "n8n_fallback"
+            item["metadata"]["n8n_corrected"] = True
+            
+            # Ensure quantity is present
+            if "quantity" not in item and "menge" in item:
+                item["quantity"] = item["menge"]
+            # Ensure config object exists
+            if "config" not in item:
+                item["config"] = {
+                    "quantity": item.get("quantity"),
+                    "material": item.get("material"),
+                    "feature_type": item.get("feature_type"),
+                    # Add dummy dimensions to prevent frontend crash
+                    "dimensions": {"width": 0, "height": 0, "length": 0}
+                }
+        return n8n_items
+    
     logger.info(f"n8n cross-validation: Comparing {len(our_items)} our items vs {len(n8n_items)} n8n items")
     
     # Build n8n lookup by position

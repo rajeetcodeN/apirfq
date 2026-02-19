@@ -116,6 +116,15 @@ async def route_ingestion(file_bytes: bytes, mime_type: str, filename: str) -> D
                 logger.info(f"Mistral OCR found no tables. Falling back to {len(native_tables)} native tables.")
                 ocr_tables = native_tables
             
+            # CRITICAL FALLBACK: If Mistral OCR failed (error msg or empty), use Native Text
+            # Example error: "Mistral OCR failed: 500 - Service unavailable."
+            if not ocr_text or len(ocr_text) < 5 or "Mistral OCR failed" in ocr_text:
+                logger.error(f"Mistral OCR failed to return valid text. FALLING BACK TO NATIVE TEXT ({len(native_text)} chars).")
+                ocr_text = native_text
+                # Also ensure tables are definitely native if OCR failed
+                if not ocr_tables:
+                    ocr_tables = native_tables
+            
             return {
                 "source": "hybrid_pdf",
                 "native_text": native_text, 
