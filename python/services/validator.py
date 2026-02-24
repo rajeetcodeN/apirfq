@@ -149,9 +149,10 @@ def extract_features_from_string(text: str) -> List[Dict[str, str]]:
 def extract_heat_treatment(text: str) -> Optional[str]:
     """
     Extracts heat treatment designations like geh.50-55HRC, verg. Rm 900-1000 N/mm², nitriert, etc.
+    Supports unitless ranges (geh.45-48), depth specs (0,3-0,5), and HRA.
     """
-    # Pattern for ranges with units: geh. 50-55 HRC, verg. 900-1100 N/mm²
-    pattern = r'(?i)(?:geh\.?|verg\.?|carbo\.?|carb\.?|QT)\s*(?:Rm\s*)?\d{2,4}(?:[-+]\d{1,4})?(?:\+/-?\d+)?\s*(?:HRC|HV\d*|N/mm²|)?'
+    # Pattern for ranges with optional units and optional case depth: geh. 50-55 HRC, verg. 900-1100, geh.56-60 0,3-0,5
+    pattern = r'(?i)(?:geh\.?|verg\.?|carbo\.?|carb\.?|QT)\s*(?:Rm\s*)?(?:HRA\s*)?\d{1,4}(?:[-+]\d{1,4})?(?:\+/-?\d+)?\s*(?:HRC|HRA|HV\d*|N/mm²|%)?(?:\s*\d+,\d+-\d+,\d+)?'
     match = re.search(pattern, text)
     if match:
         return match.group(0).strip()

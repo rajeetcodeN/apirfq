@@ -59,9 +59,9 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
         - NZG (Nutenzugabe/groove allowance) -> type "coating"
       * **CONSTRAINT**: Only extract M-codes between M1 and M21.
       * Example: "AS-8H9X7X36-M4-NZG" -> features: [{type:"thread",spec:"M4"},{type:"tolerance",spec:"H9"},{type:"coating",spec:"NZG"}]
-    - heat_treatment: Extracted heat treatment spec (e.g., "geh.50-55HRC", "verg.", "nitriert", "QT 800").
+    - heat_treatment: Extracted heat treatment spec (e.g., "geh.50-55HRC", "verg.90-100", "geh.56-60 0,3-0,5", "nitriert", "QT 800"). Units like HRC/HV may be omitted.
     - surface_treatment: Extracted surface treatment spec (e.g., "poliert", "verzinkt", "passiviert", "DBL").
-    - marking: Extracted marking spec (e.g., "marking gek. DD", "KZ").
+    - marking: Extracted marking spec (e.g., "marking gek. DD", "KZ"). **CRITICAL**: Do NOT extract packaging sizes or notes like "VP100", "VP1500", "Wirb.", or "*Neuteil" here. They are NOT markings.
     - weight_per_unit: Weight per single unit if available.
 
 article_name: **CONSTRUCT** this field *AFTER* extracting config. Use this strict format:
