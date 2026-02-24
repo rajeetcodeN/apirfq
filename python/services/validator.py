@@ -146,6 +146,66 @@ def extract_features_from_string(text: str) -> List[Dict[str, str]]:
     return features
 
 
+def extract_heat_treatment(text: str) -> Optional[str]:
+    """
+    Extracts heat treatment designations like geh.50-55HRC, verg. Rm 900-1000 N/mm², nitriert, etc.
+    """
+    # Pattern for ranges with units: geh. 50-55 HRC, verg. 900-1100 N/mm²
+    pattern = r'(?i)(?:geh\.?|verg\.?|carbo\.?|carb\.?|QT)\s*(?:Rm\s*)?\d{2,4}(?:[-+]\d{1,4})?(?:\+/-?\d+)?\s*(?:HRC|HV\d*|N/mm²|)?'
+    match = re.search(pattern, text)
+    if match:
+        return match.group(0).strip()
+    
+    # Pattern for specific norms: geh. N533.05
+    norm_match = re.search(r'(?i)(geh\.?)\s*(n\.?\s*Norm\s*)?(N\d{3}(?:\.\d+)?)', text)
+    if norm_match:
+        return norm_match.group(0).strip()
+        
+    # Standalone keywords
+    keywords = ["salzbadnitrieren", "nitriert"]
+    for kw in keywords:
+        if re.search(rf'(?i)\b{kw}\b', text):
+            return kw
+            
+    # Generic prefix fallback if followed by nothing (only if isolated)
+    generic_match = re.search(r'(?i)\b(geh\.|verg\.)(?:\s|$)', text)
+    if generic_match:
+        return generic_match.group(1).strip()
+        
+    return None
+
+def extract_surface_treatment(text: str) -> Optional[str]:
+    """
+    Extracts surface treatments using a dictionary of known terms.
+    """
+    treatments = [
+        "poliert", "verzinkt", "VZ", "brün.", "Brüniert", 
+        "Geomet321A", "geo\.", "DBL", "passiviert", "passiv\.", 
+        "vernickelt DNC 520-5µ", "vernickelt", "Zink-Nickel", 
+        "zinkphosphatiert", "phosph", "phos\.", "verz\."
+    ]
+    
+    # We build a regex OR pattern sorting by length descending to match longest first
+    treatments.sort(key=len, reverse=True)
+    pattern = r'(?i)\b(' + '|'.join(treatments) + r')\b'
+    
+    match = re.search(pattern, text)
+    if match:
+        return match.group(1).strip()
+        
+    return None
+
+def extract_marking(text: str) -> Optional[str]:
+    """
+    Extracts marking designations.
+    """
+    pattern = r'(?i)(marking gek\.|gekennz\.|Kennzeich\.|gekennzeichnet|KZ)(?:\s+([A-Za-z0-9]+))?'
+    match = re.search(pattern, text)
+    if match:
+        return match.group(0).strip()
+    return None
+
+
 def calculate_confidence(item: Dict[str, Any], raw_text_snippet: str) -> float:
     """
     Calculates a rule-based confidence score (0.0 to 1.0) for an item.
@@ -387,6 +447,28 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                         config["material"] = "C45K"
                         item["config"] = config
             
+            # 3f. EXTRACT TREATMENTS if AI missed them
+            if not config.get("heat_treatment") and text_to_scan:
+                ht = extract_heat_treatment(text_to_scan)
+                if ht:
+                    config["heat_treatment"] = ht
+                    item["config"] = config
+                    logger.info(f"Validator: Extracted Heat Treatment '{ht}' for Pos {pos}")
+                    
+            if not config.get("surface_treatment") and text_to_scan:
+                st = extract_surface_treatment(text_to_scan)
+                if st:
+                    config["surface_treatment"] = st
+                    item["config"] = config
+                    logger.info(f"Validator: Extracted Surface Treatment '{st}' for Pos {pos}")
+                    
+            if not config.get("marking") and text_to_scan:
+                mk = extract_marking(text_to_scan)
+                if mk:
+                    config["marking"] = mk
+                    item["config"] = config
+                    logger.info(f"Validator: Extracted Marking '{mk}' for Pos {pos}")
+
             # 3e. ALWAYS CONSTRUCT article_name — never send null
             dims = config.get("dimensions", {}) or {}
             form = config.get("form", "")
@@ -404,7 +486,7 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             # Build features string
             feat_str = "-".join([f.get("spec", "") for f in features if f.get("spec")]) if features else ""
             
-            # Construct: PF-{Form}-{Dimensions}-{Material}-{Features}
+            # Construct: PF-{Form}-{Dimensions}-{Material}-{Features}-{HeatTreatment}-{SurfaceTreatment}-{Marking}
             name_parts = ["PF"]
             if form:
                 name_parts.append(form)
@@ -414,6 +496,12 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                 name_parts.append(material)
             if feat_str:
                 name_parts.append(feat_str)
+            if config.get("heat_treatment"):
+                name_parts.append(config.get("heat_treatment"))
+            if config.get("surface_treatment"):
+                name_parts.append(config.get("surface_treatment"))
+            if config.get("marking"):
+                name_parts.append(config.get("marking"))
             
             constructed_name = "-".join(name_parts)
             

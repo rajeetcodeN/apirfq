@@ -59,17 +59,23 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
         - NZG (Nutenzugabe/groove allowance) -> type "coating"
       * **CONSTRAINT**: Only extract M-codes between M1 and M21.
       * Example: "AS-8H9X7X36-M4-NZG" -> features: [{type:"thread",spec:"M4"},{type:"tolerance",spec:"H9"},{type:"coating",spec:"NZG"}]
+    - heat_treatment: Extracted heat treatment spec (e.g., "geh.50-55HRC", "verg.", "nitriert", "QT 800").
+    - surface_treatment: Extracted surface treatment spec (e.g., "poliert", "verzinkt", "passiviert", "DBL").
+    - marking: Extracted marking spec (e.g., "marking gek. DD", "KZ").
     - weight_per_unit: Weight per single unit if available.
 
 article_name: **CONSTRUCT** this field *AFTER* extracting config. Use this strict format:
-"{GenericName}-{Form}-{Dimensions}-{Material}-{Features}"
+"{GenericName}-{Form}-{Dimensions}-{Material}-{Features}-{HeatTreatment}-{SurfaceTreatment}-{Marking}"
 - GenericName: "Passfeder"/"Passfed" -> "PF". Otherwise use base name.
 - Form: e.g. "AS".
 - Dimensions: e.g. "8X7X45".
 - Material: e.g. "C45+C".
 - Features: Any features found in config.features (e.g., "M4").
+- HeatTreatment: Any heat treatment found (e.g. "geh.50-55HRC"). Ignore if null.
+- SurfaceTreatment: Any surface treatment found (e.g. "verzinkt"). Ignore if null.
+- Marking: Any marking found (e.g. "KZ"). Ignore if null.
 - Do NOT include DIN/Standard in the article_name.
-*Example Result*: "PF-AS-8X7X45-C45+C-M4"
+*Example Result*: "PF-AS-8X7X45-C45+C-M4-geh.50-55HRC-verzinkt-KZ"
 
 supplier_material_number: Supplier’s material number if present, else null.
 
