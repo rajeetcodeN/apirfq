@@ -152,22 +152,24 @@ def extract_heat_treatment(text: str) -> Optional[str]:
     Supports unitless ranges (geh.45-48), depth specs (0,3-0,5), and HRA.
     """
     # Pattern for ranges with optional units and optional case depth: geh. 50-55 HRC, verg. 900-1100, geh.56-60 0,3-0,5
-    pattern = r'(?i)(?:geh\.?|verg\.?|carbo\.?|carb\.?|QT)\s*(?:Rm\s*)?(?:HRA\s*)?\d{1,4}(?:[-+]\d{1,4})?(?:\+/-?\d+)?\s*(?:HRC|HRA|HV\d*|N/mm²|%)?(?:\s*\d+,\d+-\d+,\d+)?'
+    pattern = r'(?i)(?:geh\.?|verg\.?)\s*(?:Rm\s*)?(?:HRA\s*)?\d{1,4}(?:[-+]\d{1,4})?(?:\+/-?\d+)?\s*(?:HRC|HRA|HV\d*|N/mm²|%)?(?:\s*\d+,\d+-\d+,\d+)?'
     match = re.search(pattern, text)
     if match:
-        return match.group(0).strip()
+        extracted = match.group(0).strip()
+        return extracted
     
-    # Pattern for specific norms: geh. N533.05
-    norm_match = re.search(r'(?i)(geh\.?)\s*(n\.?\s*Norm\s*)?(N\d{3}(?:\.\d+)?)', text)
+    # Pattern for specific norms: geh. N533.05 or just N533
+    norm_match = re.search(r'(?i)(geh\.?)\s*(?:n\.?\s*Norm\s*)?(N\d{3}(?:\.\d+)?)', text)
     if norm_match:
-        return norm_match.group(0).strip()
+        # Return the whole string "geh. N533"
+        return re.sub(r'\s+', ' ', norm_match.group(0).strip())
         
-    # Standalone keywords
-    keywords = ["salzbadnitrieren", "nitriert"]
-    for kw in keywords:
-        if re.search(rf'(?i)\b{kw}\b', text):
-            return kw
-            
+    # Sometimes it just says N533 standalone
+    if re.search(r'(?i)\bN\d{3}(?:\.\d+)?\b', text):
+        standalone_match = re.search(r'(?i)\bN\d{3}(?:\.\d+)?\b', text)
+        # If it's standing alone, we still consider it a heat treatment norm
+        return standalone_match.group(0).strip()
+        
     # Generic prefix fallback if followed by nothing (only if isolated)
     generic_match = re.search(r'(?i)\b(geh\.|verg\.)(?:\s|$)', text)
     if generic_match:
@@ -177,33 +179,69 @@ def extract_heat_treatment(text: str) -> Optional[str]:
 
 def extract_surface_treatment(text: str) -> Optional[str]:
     """
-    Extracts surface treatments using a dictionary of known terms.
+    Extracts surface treatments using a pattern dictionary and maps them to canonical forms.
     """
-    treatments = [
-        "poliert", "verzinkt", "VZ", "brün.", "Brüniert", 
-        "Geomet321A", "geo\.", "DBL", "passiviert", "passiv\.", 
-        "vernickelt DNC 520-5µ", "vernickelt", "Zink-Nickel", 
-        "zinkphosphatiert", "phosph", "phos\.", "verz\."
-    ]
+    mapping = {
+        r'poliert': 'poliert',
+        r'verzinkt': 'verzinkt',
+        r'verz\.': 'verz.',
+        r'VZ': 'VZ',
+        r'brün\.': 'brün.',
+        r'brüniert': 'Brüniert',
+        r'Geomet321A': 'Geomet321A',
+        r'geo\.': 'geo.',
+        r'DBL': 'DBL',
+        r'passiviert': 'passiviert',
+        r'passiv\.': 'passiv.',
+        r'vernickelt\s*DNC\s*520(?:-5[µu])?': 'vernickelt DNC 520-5µ',
+        r'vernickelt': 'vernickelt',
+        r'zink[\s\-]?nickel': 'Zink-Nickel',
+        r'zink[\s\-]?nickl': 'Zink-Nickel',
+        r'zinkphosphatiert': 'zinkphosphatiert',
+        r'phosph\.': 'phosph',
+        r'phosph': 'phosph',
+        r'phos\.': 'phos.',
+        r'PREN\s*>\s*40': 'PREN >40',
+        r'\+?QT\s*800': 'QT 800',
+        r'carbo(?:\.\s*\d+(?:-\d+)?)?(?:HRC)?': 'carbo',
+        r'carb': 'carb',
+        r'salzbad(?:nitriert|nitrieren)?': 'salzbadnitriert',
+        r'nitriert?': 'nitriert',
+    }
     
-    # We build a regex OR pattern sorting by length descending to match longest first
-    treatments.sort(key=len, reverse=True)
-    pattern = r'(?i)\b(' + '|'.join(treatments) + r')\b'
+    # We want to check longer patterns first so 'vernickelt DNC 520' matches before 'vernickelt'
+    sorted_patterns = sorted(mapping.keys(), key=len, reverse=True)
     
-    match = re.search(pattern, text)
-    if match:
-        return match.group(1).strip()
-        
+    for pat in sorted_patterns:
+        # Use boundary logic: 
+        # (?:^|[\s,\-\+]) + pattern + (?:\s|$|,|\"|\*|\-)
+        regex = r'(?:^|[\s,\-\+])(' + pat + r')(?:\s|$|,|\"|\*|\-)'
+        match = re.search(regex, text, re.IGNORECASE)
+        if match:
+            return mapping[pat]
+            
     return None
 
 def extract_marking(text: str) -> Optional[str]:
     """
-    Extracts marking designations.
+    Extracts marking designations using literal keywords.
     """
-    pattern = r'(?i)(marking gek\.|gekennz\.|Kennzeich\.|gekennzeichnet|KZ)(?:\s+([A-Za-z0-9]+))?'
-    match = re.search(pattern, text)
-    if match:
-        return match.group(0).strip()
+    mapping = {
+        r'gek\.\s*DD': 'gek. DD',
+        r'gekennz\.': 'gekennz.',
+        r'Kennzeich\.': 'Kennzeich.',
+        r'gekennzeichnet': 'gekennzeichnet',
+        r'KZ': 'KZ'
+    }
+    
+    sorted_patterns = sorted(mapping.keys(), key=len, reverse=True)
+    
+    for pat in sorted_patterns:
+        regex = r'(?:^|[\s,\-\+])(' + pat + r')(?:\s|$|,|\"|\*|\-)'
+        match = re.search(regex, text, re.IGNORECASE)
+        if match:
+            return mapping[pat]
+            
     return None
 
 
@@ -448,27 +486,55 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                         config["material"] = "C45K"
                         item["config"] = config
             
-            # 3f. EXTRACT TREATMENTS if AI missed them
-            if not config.get("heat_treatment") and text_to_scan:
-                ht = extract_heat_treatment(text_to_scan)
-                if ht:
-                    config["heat_treatment"] = ht
-                    item["config"] = config
-                    logger.info(f"Validator: Extracted Heat Treatment '{ht}' for Pos {pos}")
-                    
-            if not config.get("surface_treatment") and text_to_scan:
-                st = extract_surface_treatment(text_to_scan)
-                if st:
-                    config["surface_treatment"] = st
-                    item["config"] = config
-                    logger.info(f"Validator: Extracted Surface Treatment '{st}' for Pos {pos}")
-                    
-            if not config.get("marking") and text_to_scan:
-                mk = extract_marking(text_to_scan)
-                if mk:
-                    config["marking"] = mk
-                    item["config"] = config
-                    logger.info(f"Validator: Extracted Marking '{mk}' for Pos {pos}")
+            # 3f. EXTRACT TREATMENTS AND ALWAYS OVERRIDE AI
+            text_to_scan_fallback = text_to_scan or ""
+            
+            # Map surface treatment
+            st = extract_surface_treatment(text_to_scan_fallback)
+            if st:
+                config["surface_treatment"] = st
+                logger.info(f"Validator: Extracted Surface Treatment '{st}' for Pos {pos}")
+            elif config.get("surface_treatment"):
+                # If AI found it but text_to_scan didn't, try normalizing AI's value directly
+                clean_st = extract_surface_treatment(config["surface_treatment"])
+                if clean_st:
+                    config["surface_treatment"] = clean_st
+
+            # Map heat treatment
+            ht = extract_heat_treatment(text_to_scan_fallback)
+            if ht:
+                config["heat_treatment"] = ht
+                logger.info(f"Validator: Extracted Heat Treatment '{ht}' for Pos {pos}")
+            elif config.get("heat_treatment"):
+                # Check if AI put a Surface Treatment inside Heat Treatment (e.g. QT 800)
+                ai_ht = config["heat_treatment"]
+                clean_st = extract_surface_treatment(ai_ht)
+                if clean_st:
+                    config["surface_treatment"] = clean_st
+                    config["heat_treatment"] = None
+                    logger.info(f"Validator: Moved AI Heat Treatment '{ai_ht}' to Surface Treatment '{clean_st}'")
+                else:
+                    clean_ht = extract_heat_treatment(ai_ht)
+                    if clean_ht:
+                        config["heat_treatment"] = clean_ht
+            
+            # 3g. STRICTLY SANITIZE MARKING
+            mk = extract_marking(text_to_scan_fallback)
+            if mk:
+                config["marking"] = mk
+                logger.info(f"Validator: Found Explicit Marking '{mk}' for Pos {pos}")
+            else:
+                hallucinated = config.get("marking")
+                if hallucinated:
+                    clean_mk = extract_marking(hallucinated)
+                    if clean_mk:
+                        config["marking"] = clean_mk
+                        logger.info(f"Validator: Cleaned AI Marking to '{clean_mk}' for Pos {pos}")
+                    else:
+                        logger.warning(f"Validator: Wiping out hallucinated marking '{hallucinated}' for Pos {pos}")
+                        config["marking"] = None
+            
+            item["config"] = config
 
             # 3e. ALWAYS CONSTRUCT article_name — never send null
             dims = config.get("dimensions", {}) or {}
