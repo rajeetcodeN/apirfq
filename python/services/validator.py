@@ -205,8 +205,8 @@ def extract_surface_treatment(text: str) -> Optional[str]:
         r'\+?QT\s*800': 'QT 800',
         r'carbo(?:\.\s*\d+(?:-\d+)?)?(?:HRC)?': 'carbo',
         r'carb': 'carb',
-        r'salzbad(?:nitriert|nitrieren)?': 'salzbadnitriert',
-        r'nitriert?': 'nitriert',
+        r'salzbad(?:nitrier(?:t|en|ung)?)?': 'salzbadnitriert',
+        r'nitrier(?:t|en|ung)?': 'nitriert',
     }
     
     # We want to check longer patterns first so 'vernickelt DNC 520' matches before 'vernickelt'
@@ -214,8 +214,8 @@ def extract_surface_treatment(text: str) -> Optional[str]:
     
     for pat in sorted_patterns:
         # Use boundary logic: 
-        # (?:^|[\s,\-\+]) + pattern + (?:\s|$|,|\"|\*|\-)
-        regex = r'(?:^|[\s,\-\+])(' + pat + r')(?:\s|$|,|\"|\*|\-)'
+        # (?:^|[\s,\-\+\.\(\[]) + pattern + (?:\s|$|,|\"|\*|\-|\)|\]|\.)
+        regex = r'(?:^|[\s,\-\+\.\(\[])(' + pat + r')(?:\s|$|,|\"|\*|\-|\)|\]|\.)'
         match = re.search(regex, text, re.IGNORECASE)
         if match:
             return mapping[pat]
@@ -237,7 +237,7 @@ def extract_marking(text: str) -> Optional[str]:
     sorted_patterns = sorted(mapping.keys(), key=len, reverse=True)
     
     for pat in sorted_patterns:
-        regex = r'(?:^|[\s,\-\+])(' + pat + r')(?:\s|$|,|\"|\*|\-)'
+        regex = r'(?:^|[\s,\-\+\.\(\[])(' + pat + r')(?:\s|$|,|\"|\*|\-|\)|\]|\.)'
         match = re.search(regex, text, re.IGNORECASE)
         if match:
             return mapping[pat]
