@@ -68,12 +68,26 @@ def parse_dimensions_from_string(text: str) -> Optional[Dict[str, float]]:
     """
     Extracts dimensions (WxHxL) from a string like '20x12x50' or '8H9x7x36'.
     Handles tolerance specs embedded in dimensions (e.g., 8H9 = width 8 + H9 tolerance).
+    Also handles tolerance on height: 8x7h7x30 = height 7 + h7 tolerance.
     Returns {width, height, length} or None.
     """
-    # First try: Tolerance-aware pattern for cases like 8H9X7X36
-    # Pattern: digit(s) + optional tolerance (H7, H9, h9, etc.) + X + digits + X + digits
-    pattern_tolerance_3d = r'(\d+(?:[.,]\d+)?)[hH]\d+\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)'
-    match = re.search(pattern_tolerance_3d, text)
+    # First try: Tolerance on WIDTH (1st dim) e.g. 8H9X7X36 or 8h6X7X30
+    pattern_tol_width = r'(\d+(?:[.,]\d+)?)[hH]\d+\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)'
+    match = re.search(pattern_tol_width, text)
+    if match:
+        try:
+            dims = [float(d.replace(',', '.')) for d in match.groups()]
+            return {
+                "width": dims[0],
+                "height": dims[1],
+                "length": dims[2]
+            }
+        except ValueError:
+            pass
+    
+    # Second try: Tolerance on HEIGHT (2nd dim) e.g. 8X7h7X30
+    pattern_tol_height = r'(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)[hH]\d+\s*[xX]\s*(\d+(?:[.,]\d+)?)'
+    match = re.search(pattern_tol_height, text)
     if match:
         try:
             dims = [float(d.replace(',', '.')) for d in match.groups()]
@@ -144,6 +158,50 @@ def extract_features_from_string(text: str) -> List[Dict[str, str]]:
             features.append({"feature_type": "coating", "spec": "NZG"})
             
     return features
+
+
+def extract_shaft_tolerance(text: str) -> Dict[str, str]:
+    """
+    Extracts shaft tolerance (h6, h7, h8) and determines which dimension it applies to.
+    
+    Cases:
+      1. Glued to width:  "8h6×7×30"  → spec=h6, position=width
+      2. Glued to height: "8×7h7×30"  → spec=h7, position=height
+      3. Standalone:      "h6 8×7×30" or "8×7×30 h6" → spec=h6, position=width
+      4. Nothing found:   "8×7×30"    → spec=h9, position=width (default)
+    
+    Returns: {"spec": "h6", "position": "width"}
+    """
+    VALID_TOLERANCES = ["h6", "h7", "h8"]
+    
+    # Case 2 FIRST (more specific): Tolerance glued to HEIGHT (2nd dimension) e.g. 8×7h7×30
+    # Must have WxH pattern before the tolerance
+    match_height = re.search(r'\d+(?:[.,]\d+)?\s*[xX]\s*(\d+(?:[.,]\d+)?)(h[678])\s*[xX]\s*\d+', text, re.IGNORECASE)
+    if match_height:
+        spec = match_height.group(2).lower()
+        if spec in VALID_TOLERANCES:
+            logger.info(f"Shaft tolerance '{spec}' detected on HEIGHT")
+            return {"spec": spec, "position": "height"}
+    
+    # Case 1: Tolerance glued to WIDTH (1st dimension) e.g. 8h6×7×30
+    # Must NOT be preceded by xX (to avoid matching height case)
+    match_width = re.search(r'(?<![xX\s])(\d+(?:[.,]\d+)?)(h[678])\s*[xX]\s*\d+', text, re.IGNORECASE)
+    if match_width:
+        spec = match_width.group(2).lower()
+        if spec in VALID_TOLERANCES:
+            logger.info(f"Shaft tolerance '{spec}' detected on WIDTH")
+            return {"spec": spec, "position": "width"}
+    
+    # Case 3: Standalone tolerance before or after dimensions e.g. "h6 8×7×30" or "8×7×30 h6"
+    match_standalone = re.search(r'(?:^|[\s\-])(h[678])(?:[\s\-]|$)', text, re.IGNORECASE)
+    if match_standalone:
+        spec = match_standalone.group(1).lower()
+        if spec in VALID_TOLERANCES:
+            logger.info(f"Shaft tolerance '{spec}' detected standalone → defaulting to WIDTH")
+            return {"spec": spec, "position": "width"}
+    
+    # Case 4: No tolerance found → default h9 on width
+    return {"spec": "h9", "position": "width"}
 
 
 def extract_heat_treatment(text: str) -> Optional[str]:
@@ -437,6 +495,19 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             for sf in strict_features:
                 if not any(cf.get("spec") == sf["spec"] for cf in current_features):
                     current_features.append(sf)
+            
+            # 3a. EXTRACT SHAFT TOLERANCE (h6/h7/h8, default h9)
+            shaft_tol = extract_shaft_tolerance(text_to_scan)
+            # Remove any existing shaft tolerance feature to avoid duplicates
+            current_features = [f for f in current_features if not (
+                f.get("feature_type") == "tolerance" and f.get("spec", "").lower().startswith("h") and f.get("spec", "").lower() in ["h6", "h7", "h8", "h9"]
+            )]
+            current_features.append({
+                "feature_type": "tolerance",
+                "spec": shaft_tol["spec"],
+                "position": shaft_tol["position"]
+            })
+            logger.info(f"Validator: Shaft tolerance for Pos {pos}: {shaft_tol['spec']} on {shaft_tol['position']}")
             
             config["features"] = current_features
             item["config"] = config

@@ -50,17 +50,23 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
       * **HANDLE DASH SEPARATORS**: "8x7x80 — 10000" -> The number after the dash is QUANTITY, not a dimension.
       * **IGNORE** loose numbers that look like material codes (e.g., ignore "100" from "100-013...").
       * Example: "B=10 H=8 T=16" -> {width: 10, height: 8, length: 16}.
-    - features: List of features. Each feature is an object { "feature_type": "...", "spec": "..." }.
+    - features: List of features. Each feature is an object { "feature_type": "...", "spec": "...", "position": "..." }.
       * **CRITICAL**: Extract ALL technical specifications (M-codes, coatings, tolerances).
       * **ALWAYS** extract "M" codes (e.g., "M6") as type "thread"/"bore", even if they appear in the description.
       * **CRITICAL**: Extract ALL technical specifications:
         - M-codes (M4, M6, M8) -> type "thread"
         - H-tolerances (H7, H9) -> type "tolerance" 
+        - Shaft tolerances (h6, h7, h8) -> type "tolerance" with "position" field
         - NZG (Nutenzugabe/groove allowance) -> type "coating"
+      * **SHAFT TOLERANCE (h6/h7/h8)**: Extract the shaft tolerance and identify WHICH dimension it applies to:
+        - "8h6×7×30" -> tolerance glued to 1st number -> {type:"tolerance", spec:"h6", position:"width"}
+        - "8×7h7×30" -> tolerance glued to 2nd number -> {type:"tolerance", spec:"h7", position:"height"}
+        - "h6 8×7×30" -> standalone -> {type:"tolerance", spec:"h6", position:"width"}
+        - If NO shaft tolerance is stated -> default to {type:"tolerance", spec:"h9", position:"width"}
       * **CONSTRAINT**: Only extract M-codes between M1 and M21.
-      * Example: "AS-8H9X7X36-M4-NZG" -> features: [{type:"thread",spec:"M4"},{type:"tolerance",spec:"H9"},{type:"coating",spec:"NZG"}]
+      * Example: "AS-8h6X7X36-M4-NZG" -> features: [{type:"tolerance",spec:"h6",position:"width"},{type:"thread",spec:"M4"},{type:"coating",spec:"NZG"}]
     - heat_treatment: Extracted heat treatment spec (e.g., "geh.50-55HRC", "verg.90-100", "geh.56-60 0,3-0,5", "N533"). Units like HRC/HV may be omitted.
-    - surface_treatment: Extracted surface treatment spec (e.g., "poliert", "verzinkt", "QT 800", "carb", "carbo.50-54", "nitriert", "salzbadnitriert").
+    - surface_treatment: Extracted surface treatment spec (e.g., "poliert", "verzinkt", "QT 800", "carb", "carbo.50-54", "nitriert", "salzbadnitriert"). **DO NOT EXTRACT** testing methods (like "Wirb.") or packaging units (like "VP200").
     - marking: Extracted marking spec. **CRITICAL**: ONLY extract if it starts with "KZ", "gekennz.", "Kennzeich.", "gekennzeichnet", or "marking gek.". DO NOT extract anything else. "NEU", "*NEUTEIL*", "VP100", "QS APZ3.1", "PREN>40", "C700" are NOT markings. If no explicitly labeled marking exists, RETURN NULL. Do not guess.
     - weight_per_unit: Weight per single unit if available.
 
