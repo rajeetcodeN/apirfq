@@ -32,20 +32,30 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
     - form: The exact form letter/code (e.g., "A", "B", "C", "AS", "AB", "E", "D", "K").
       * **CRITICAL**: Do NOT confuse dimension labels with the Form. "B=10" means Form is NOT "B".
       * **IMPORTANT**: Extract single letters like "E", "K", "D" if they appear after the standard (e.g. "DIN 6885 E").
-    - material: Material grade.
-      * **CRITICAL**: Normalize ALL C45 variants to "C45+C".
-        - "C45" -> "C45+C"
-        - "C45K" -> "C45+C"
-        - "C45C" -> "C45+C"
-        - "C45+C" -> "C45+C"
-      * **WHITELIST**: Only accepted values are: ["C45+C", "42CrMo4", "1.4301", "1.4305", "1.4571", "1.4404", "1.4057"].
-      * **IGNORE**: "P5K", "P85", "P100", "S355", "S235".
+    - material: Material grade (extract exactly as written).
+      * **CRITICAL**: Extract the EXACT material name or DIN number from the text. Do NOT guess or default to C45+C.
+      * Common materials include:
+        - Carbon Steel: C40, C45, C45+C, C45E, C45R, C50, C50E, C60E
+        - Alloy Steel: 16MnCr5, 17Cr3, 20MnCr5, 25CrMo4, 30CrMo4, 34CrMo4, 34CrNiMo6, 41Cr4, 42CrMo4
+        - Bearing/Tool Steel: 100Cr6, 100CrMn6, 102Cr6, 95MnWCr5, X100CrMoV5, X153CrMoV12, X40CrMoV5-1
+        - High-Speed Steel: HS6-5-2, HS2-9-1-8, HS10-4-3-10
+        - Stainless Steel: X5CrNi18-9, X2CrNiMo17-12-2, X6CrNiMoTi17-12-2, X10CrNiS18-9, X17CrNi16-2, X20Cr13
+        - Structural Steel: S235JR, S235J2, S275JR, S355JR, S355J2, S355K2, S420N
+        - International: ASTM A36, GB Q235, JIS SCM440
+      * **DIN NUMBERS**: Also extract material numbers like 1.4301, 1.4571, 1.7225, 1.0503, etc.
+      * **KEYWORDS**: "VA", "V2A", "V4A", "STAINLESS" all refer to stainless steel.
+      * **C45 VARIANTS**: Normalize ALL C45 variants (C45, C45K, C45C, C45E, C45R, C50, C50E) and the number "1.0503" -> "C45+C".
+      * **IGNORE**: "P5K", "P85", "P100" (these are packaging/position codes, NOT materials).
     - dimensions: Object with `width`, `height`, `length` (numeric values).
       * **CRITICAL**: Prioritize dimensions found WITHIN the article string (e.g., "20X12X50" -> Length=50).
-      * **CRITICAL**: Handle TOLERANCE SPECS in dimensions: "8H9X7X36" means width=8, H9=tolerance, height=7, length=36.
-        - The tolerance letter+number (H7, H9, h9) is NOT a dimension — it's a feature.
-        - The tolerance letter+number (H7, H9) is NOT a dimension — it's a feature.
-        - Example: "8H9X7X36" -> dimensions: {width:8, height:7, length:36}, feature: {type:"tolerance", spec:"H9"}
+      * **CRITICAL**: Handle TOLERANCE SPECS in dimensions. The tolerance (h6, h7, h8, H7, H9) is NOT a dimension — STRIP IT before extracting width/height/length.
+        - "8H9X7X36" -> width=8, height=7, length=36 (H9 is a tolerance, NOT height)
+        - "8h6x7x30" -> width=8, height=7, length=30 (h6 is a tolerance on width, NOT a dimension)
+        - "8xh68x30" -> width=8, height=8, length=30 (h6 is a tolerance PREFIX on height=8, the "6" is NOT height)
+        - "h65x7x30" -> width=5, height=7, length=30 (h6 is a tolerance PREFIX on width=5, the "6" is NOT width)
+      * **DANGER**: DO NOT confuse the digit in the tolerance spec (e.g., "6" from "h6") with a dimension value!
+        - WRONG: "8xh68x30" -> height=6 (INCORRECT, "6" is part of "h6")
+        - RIGHT: "8xh68x30" -> height=8 (CORRECT, "8" is the actual height, "h6" is the tolerance)
       * **HANDLE ENGLISH**: "Parallel key DIN 6885 E 8x7x80" -> Form=E, Dims=8x7x80.
       * **HANDLE DASH SEPARATORS**: "8x7x80 — 10000" -> The number after the dash is QUANTITY, not a dimension.
       * **IGNORE** loose numbers that look like material codes (e.g., ignore "100" from "100-013...").
@@ -58,10 +68,13 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
         - H-tolerances (H7, H9) -> type "tolerance" 
         - Shaft tolerances (h6, h7, h8) -> type "tolerance" with "position" field
         - NZG (Nutenzugabe/groove allowance) -> type "coating"
-      * **SHAFT TOLERANCE (h6/h7/h8)**: Extract the shaft tolerance and identify WHICH dimension it applies to:
-        - "8h6×7×30" -> tolerance glued to 1st number -> {type:"tolerance", spec:"h6", position:"width"}
-        - "8×7h7×30" -> tolerance glued to 2nd number -> {type:"tolerance", spec:"h7", position:"height"}
-        - "h6 8×7×30" -> standalone -> {type:"tolerance", spec:"h6", position:"width"}
+      * **SHAFT TOLERANCE (h6/h7/h8)**: Extract the shaft tolerance and identify WHICH dimension it applies to.
+        There are 5 possible formats:
+        1. Suffix on width:  "8h6x7x30"  -> spec=h6, position=width  (h6 AFTER width digit)
+        2. Suffix on height: "8x7h7x30"  -> spec=h7, position=height (h7 AFTER height digit)
+        3. Prefix on width:  "h68x7x30"  -> spec=h6, position=width  (h6 BEFORE width digit)
+        4. Prefix on height: "8xh68x30"  -> spec=h6, position=height (h6 BEFORE height digit)
+        5. Standalone:       "h6 8x7x30" -> spec=h6, position=width  (h6 separated by space)
         - If NO shaft tolerance is stated -> default to {type:"tolerance", spec:"h9", position:"width"}
       * **CONSTRAINT**: Only extract M-codes between M1 and M21.
       * Example: "AS-8h6X7X36-M4-NZG" -> features: [{type:"tolerance",spec:"h6",position:"width"},{type:"thread",spec:"M4"},{type:"coating",spec:"NZG"}]

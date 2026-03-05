@@ -6,48 +6,123 @@ from typing import List, Dict, Any, Optional
 logger = logging.getLogger(__name__)
 
 # ── Material Auto-Correction ──────────────────────────────────────────────────
-VALID_MATERIALS = ["C45", "C45+C", "C45K", "42CrMo4", "1.4301", "1.4305", "1.4571", "1.4404", "1.4057"]
+
+# Full material catalog: name -> number
+MATERIAL_NUMBER_MAP = {
+    # Stainless Steel (density ~7.9-8.0)
+    "X10CrNiS18-9": "1.4305",
+    "X2CrNi18-9": "1.4307",
+    "X2CrNiMo17-12-2": "1.4404",
+    "X5CrNi18-9": "1.4301",
+    "X5CrNiMo17-12-2": "1.4401",
+    "X6CrNiMoTi17-12-2": "1.4571",
+    "X2CrMoTi18-2": "1.4521",
+    "X2CrTiNb18": "1.4509",
+    "X6Cr17": "1.4016",
+    "X17CrNi16-2": "1.4057",
+    "X20Cr13": "1.4021",
+    "X2CrNiMoN22-5-3": "1.4462",
+    # Steel (density 7.85)
+    "C40": "1.0511",
+    "C45": "1.0503",
+    "C45+C": "1.1191",
+    "C45E": "1.1201",
+    "C45R": None,
+    "C50": "1.0540",
+    "C50E": "1.1206",
+    "C60E": "1.1221",
+    "16MnCr5": "1.7131",
+    "17Cr3": "1.7016",
+    "20MnCr5": "1.7147",
+    "25CrMo4": "1.7218",
+    "30CrMo4": "1.7216",
+    "30CrNiMo8": "1.6580",
+    "34CrMo4": "1.7220",
+    "34CrNiMo6": "1.6582",
+    "41Cr4": "1.7035",
+    "42CrMo4": "1.7225",
+    "100Cr6": "1.3505",
+    "100CrMn6": "1.3520",
+    "102Cr6": "1.2067",
+    "95MnWCr5": "1.2510",
+    "S235J2": "1.0038",
+    "S235JR": "1.0044",
+    "S275JR": "1.0117",
+    "S355J2": "1.0577",
+    "S355JR": "1.0045",
+    "S355K2": "1.0596",
+    "S420N": "1.8902",
+    # Tool / High-Speed Steel
+    "HS6-5-2": "1.3343",
+    "HS2-9-1-8": "1.3247",
+    "HS10-4-3-10": "1.3207",
+    "X100CrMoV5": "1.2363",
+    "X153CrMoV12": "1.2379",
+    "X40CrMoV5-1": "1.2344",
+    # International Standards
+    "ASTM A36": None,
+    "GB Q235": None,
+    "JIS SCM440": None,
+}
+
+# Reverse lookup: number -> name (skip entries without a number)
+NUMBER_TO_MATERIAL = {v: k for k, v in MATERIAL_NUMBER_MAP.items() if v}
+
+# All valid material names AND numbers
+VALID_MATERIALS = set(MATERIAL_NUMBER_MAP.keys()) | {v for v in MATERIAL_NUMBER_MAP.values() if v}
 
 # Known bad -> correct mappings
 MATERIAL_FIX_MAP = {
-    "P5K": "C45K",
-    "P5C": "C45+C",
+    # C45 variants all map to C45+C
+    "1.0503": "C45+C",
+    "C45E": "C45+C",
+    "C50": "C45+C",
+    "C50E": "C45+C",
+    "C45K": "C45+C",
     "C45C": "C45+C",
-    "P85-C45K": "C45K",
+    "P5K": "C45+C",
+    "P5C": "C45+C",
+    "P85-C45K": "C45+C",
     "P885-C45C": "C45+C",
     "P885-C45+C": "C45+C",
     "P85-C45+C": "C45+C",
     "P85-C45C": "C45+C",
+    # Stainless keywords
+    "VA": "1.4301",
+    "STAINLESS": "1.4301",
 }
 
 def fix_material(material: str) -> str:
     """
     Auto-corrects known bad material values.
     1. Check exact match in fix map
-    2. Try cleaning P-prefixes
-    3. Return original if already valid
+    2. Check if already valid (name or number)
+    3. Try cleaning P-prefixes
+    4. Check for DIN material number patterns (1.xxxx)
+    5. Check for VA/STAINLESS keywords
     """
     if not material:
         return material
     
+    material_clean = material.strip()
+    
     # 1. Exact match in known fixes
-    if material in MATERIAL_FIX_MAP:
-        fixed = MATERIAL_FIX_MAP[material]
+    if material_clean in MATERIAL_FIX_MAP:
+        fixed = MATERIAL_FIX_MAP[material_clean]
         logger.info(f"Material auto-corrected: '{material}' -> '{fixed}'")
         return fixed
     
-    # 2. Already valid? Return as-is
-    if material in VALID_MATERIALS:
-        return material
+    # 2. Already valid? (check both name and number)
+    if material_clean in VALID_MATERIALS:
+        return material_clean
     
     # 3. Try stripping common P-prefixes and re-checking
-    cleaned = material
+    cleaned = material_clean
     for prefix in ["P885-", "P85-", "PF-", "P5", "P8"]:
         if cleaned.upper().startswith(prefix.upper()):
             cleaned = cleaned[len(prefix):]
             break
     
-    # Check if cleaned version is valid
     if cleaned in VALID_MATERIALS:
         logger.info(f"Material auto-corrected: '{material}' -> '{cleaned}'")
         return cleaned
@@ -57,10 +132,22 @@ def fix_material(material: str) -> str:
         if cleaned.upper() == "C45C":
             logger.info(f"Material auto-corrected: '{material}' -> 'C45+C'")
             return "C45+C"
-        elif cleaned.upper() == "C45K":
-            return "C45K"
     
-    # 5. Nothing worked, return original (validator will penalize confidence)
+    # 5. Check for DIN material number pattern: 1.xxxx
+    mat_num_match = re.search(r'(1\.\d{4})', material_clean)
+    if mat_num_match:
+        mat_num = mat_num_match.group(1)
+        if mat_num in NUMBER_TO_MATERIAL or mat_num in VALID_MATERIALS:
+            logger.info(f"Material recognized by DIN number: '{material}' -> '{mat_num}'")
+            return mat_num
+    
+    # 6. Check for VA / STAINLESS keywords
+    if material_clean.upper() in ["VA", "STAINLESS", "V2A", "V4A"]:
+        fixed = MATERIAL_FIX_MAP.get(material_clean.upper(), "1.4301")
+        logger.info(f"Material keyword recognized: '{material}' -> '{fixed}'")
+        return fixed
+    
+    # 7. Nothing worked, return original
     logger.warning(f"Unknown material '{material}' - could not auto-correct")
     return material
 
@@ -93,7 +180,7 @@ def parse_dimensions_from_string(text: str) -> Optional[Dict[str, float]]:
             pass
     
     # 3. Prefix on HEIGHT: 8xh68x30 (h6 before height digit 8)
-    match = re.search(r'(\d+(?:[.,]\d+)?)\s*[xX]\s*[hH][678]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)', text)
+    match = re.search(r'(\d+(?:[.,]\d+)?)\s*[xX]\s*[hH]\d+\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)', text)
     if match:
         try:
             dims = [float(d.replace(',', '.')) for d in match.groups()]
@@ -102,7 +189,7 @@ def parse_dimensions_from_string(text: str) -> Optional[Dict[str, float]]:
             pass
     
     # 4. Prefix on WIDTH: h68x7x30 (h6 before width digit 8)
-    match = re.search(r'[hH][678]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)', text)
+    match = re.search(r'[hH]\d+\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)', text)
     if match:
         try:
             dims = [float(d.replace(',', '.')) for d in match.groups()]
@@ -163,56 +250,58 @@ def extract_features_from_string(text: str) -> List[Dict[str, str]]:
 
 def extract_shaft_tolerance(text: str) -> Dict[str, str]:
     """
-    Extracts shaft tolerance (h6, h7, h8) and determines which dimension it applies to.
+    Extracts shaft tolerance (h6, h7, h8). Any other h-tolerance (like h11)
+    is mapping down to h9 implicitly. Determines which dimension it applies to.
     Handles both suffix (8h6x7x30) and prefix (h68x7x30, 8xh68x30) formats.
     
     Returns: {"spec": "h6", "position": "width"}
     """
     VALID_TOLERANCES = ["h6", "h7", "h8"]
     
+    def normalize_spec(spec: str) -> str:
+        """Map h11, h10, h9 etc. to h9 if it's not strictly h6/h7/h8"""
+        if spec in VALID_TOLERANCES:
+            return spec
+        return "h9"
+    
     # --- SUFFIX patterns (tolerance AFTER the digit) ---
     
     # Suffix on HEIGHT: 8×7h7×30 (h7 after height digit)
-    match = re.search(r'\d+(?:[.,]\d+)?\s*[xX]\s*\d+(?:[.,]\d+)?(h[678])\s*[xX]\s*\d+', text, re.IGNORECASE)
+    match = re.search(r'\d+(?:[.,]\d+)?\s*[xX]\s*\d+(?:[.,]\d+)?(h\d+)\s*[xX]\s*\d+', text, re.IGNORECASE)
     if match:
-        spec = match.group(1).lower()
-        if spec in VALID_TOLERANCES:
-            logger.info(f"Shaft tolerance '{spec}' detected (suffix on HEIGHT)")
-            return {"spec": spec, "position": "height"}
+        spec = normalize_spec(match.group(1).lower())
+        logger.info(f"Shaft tolerance '{spec}' detected (suffix on HEIGHT)")
+        return {"spec": spec, "position": "height"}
     
     # Suffix on WIDTH: 8h6×7×30 (h6 after width digit, NOT preceded by xX)
-    match = re.search(r'(?<![xX])\d+(?:[.,]\d+)?(h[678])\s*[xX]\s*\d+', text, re.IGNORECASE)
+    match = re.search(r'(?<![xX])\d+(?:[.,]\d+)?(h\d+)\s*[xX]\s*\d+', text, re.IGNORECASE)
     if match:
-        spec = match.group(1).lower()
-        if spec in VALID_TOLERANCES:
-            logger.info(f"Shaft tolerance '{spec}' detected (suffix on WIDTH)")
-            return {"spec": spec, "position": "width"}
+        spec = normalize_spec(match.group(1).lower())
+        logger.info(f"Shaft tolerance '{spec}' detected (suffix on WIDTH)")
+        return {"spec": spec, "position": "width"}
     
     # --- PREFIX patterns (tolerance BEFORE the digit) ---
     
     # Prefix on HEIGHT: 8xh68x30 (h6 before height digit, after x)
-    match = re.search(r'\d+\s*[xX]\s*(h[678])\s*\d+\s*[xX]\s*\d+', text, re.IGNORECASE)
+    match = re.search(r'\d+\s*[xX]\s*(h\d+)\s*\d+\s*[xX]\s*\d+', text, re.IGNORECASE)
     if match:
-        spec = match.group(1).lower()
-        if spec in VALID_TOLERANCES:
-            logger.info(f"Shaft tolerance '{spec}' detected (prefix on HEIGHT)")
-            return {"spec": spec, "position": "height"}
+        spec = normalize_spec(match.group(1).lower())
+        logger.info(f"Shaft tolerance '{spec}' detected (prefix on HEIGHT)")
+        return {"spec": spec, "position": "height"}
     
     # Prefix on WIDTH: h68x7x30 (h6 before width digit, at start)
-    match = re.search(r'(?:^|[\s\-])(h[678])\s*\d+\s*[xX]\s*\d+\s*[xX]\s*\d+', text, re.IGNORECASE)
+    match = re.search(r'(?:^|[\s\-])(h\d+)\s*\d+\s*[xX]\s*\d+\s*[xX]\s*\d+', text, re.IGNORECASE)
     if match:
-        spec = match.group(1).lower()
-        if spec in VALID_TOLERANCES:
-            logger.info(f"Shaft tolerance '{spec}' detected (prefix on WIDTH)")
-            return {"spec": spec, "position": "width"}
+        spec = normalize_spec(match.group(1).lower())
+        logger.info(f"Shaft tolerance '{spec}' detected (prefix on WIDTH)")
+        return {"spec": spec, "position": "width"}
     
     # --- STANDALONE (tolerance separated by space/letter, not glued to any digit) ---
-    match = re.search(r'(?:^|[^\d])(h[678])(?:[^0-9xX]|$)', text, re.IGNORECASE)
+    match = re.search(r'(?:^|[^\d])(h\d+)(?:[^0-9xX]|$)', text, re.IGNORECASE)
     if match:
-        spec = match.group(1).lower()
-        if spec in VALID_TOLERANCES:
-            logger.info(f"Shaft tolerance '{spec}' detected (standalone → defaults to WIDTH)")
-            return {"spec": spec, "position": "width"}
+        spec = normalize_spec(match.group(1).lower())
+        logger.info(f"Shaft tolerance '{spec}' detected (standalone → defaults to WIDTH)")
+        return {"spec": spec, "position": "width"}
     
     # Default: h9 on width
     return {"spec": "h9", "position": "width"}
@@ -497,9 +586,33 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
 
             # 2. FIX DIMENSIONS (Using strict regex on the SOURCE text)
             strict_dims = parse_dimensions_from_string(text_to_scan)
+            # When text_to_scan is a fallback (article_name), the AI may have mixed
+            # tolerance digits into height (e.g., '6' from 'h6' becomes height).
+            # Try to find the correct line in source_text and re-parse from there.
+            if used_fallback and source_text:
+                ai_dims = config.get("dimensions", {}) or {}
+                ai_w = ai_dims.get("width")
+                ai_l = ai_dims.get("length")
+                
+                # Search each source line for one that correlates with this item's dims
+                for src_line in source_lines:
+                    if not src_line.strip():
+                        continue
+                    src_line_dims = parse_dimensions_from_string(src_line)
+                    if not src_line_dims or not src_line_dims.get("length"):
+                        continue
+                    # Match: source line must share width OR length with AI's extraction
+                    if ai_w and src_line_dims.get("width") == ai_w:
+                        strict_dims = src_line_dims
+                        text_to_scan = src_line  # Update so tolerance extraction uses this line
+                        logger.info(f"Validator: Re-parsed dims from source line (matched width={ai_w}) for Pos {pos}: {src_line_dims}")
+                        break
+                    if ai_l and src_line_dims.get("length") == ai_l:
+                        strict_dims = src_line_dims
+                        text_to_scan = src_line
+                        logger.info(f"Validator: Re-parsed dims from source line (matched length={ai_l}) for Pos {pos}: {src_line_dims}")
+                        break
             if strict_dims and strict_dims.get("length"):
-                 item_dims = config.get("dimensions", {}) or {}
-                 # Only override checking if values differ significantly? 
                  # Trust Regex over AI for Dimensions.
                  config["dimensions"] = strict_dims
             
