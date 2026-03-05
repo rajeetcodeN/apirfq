@@ -498,6 +498,13 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             
             # 3a. EXTRACT SHAFT TOLERANCE (h6/h7/h8, default h9)
             shaft_tol = extract_shaft_tolerance(text_to_scan)
+            # If we got the default h9 and the snippet was a fallback,
+            # also try the full source_text — the tolerance might be elsewhere in the line
+            if shaft_tol["spec"] == "h9" and source_text:
+                shaft_tol_full = extract_shaft_tolerance(source_text)
+                if shaft_tol_full["spec"] != "h9":
+                    shaft_tol = shaft_tol_full
+                    logger.info(f"Validator: Shaft tolerance found in full source text (fallback recovery)")
             # Remove any existing shaft tolerance feature to avoid duplicates
             current_features = [f for f in current_features if not (
                 f.get("feature_type") == "tolerance" and f.get("spec", "").lower().startswith("h") and f.get("spec", "").lower() in ["h6", "h7", "h8", "h9"]
