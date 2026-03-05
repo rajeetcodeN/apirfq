@@ -67,63 +67,64 @@ def fix_material(material: str) -> str:
 def parse_dimensions_from_string(text: str) -> Optional[Dict[str, float]]:
     """
     Extracts dimensions (WxHxL) from a string like '20x12x50' or '8H9x7x36'.
-    Handles tolerance specs embedded in dimensions (e.g., 8H9 = width 8 + H9 tolerance).
-    Also handles tolerance on height: 8x7h7x30 = height 7 + h7 tolerance.
+    Handles tolerance specs embedded in dimensions in 4 formats:
+      Suffix-Width:  8h6x7x30  (tolerance AFTER width digit)
+      Suffix-Height: 8x7h7x30  (tolerance AFTER height digit)
+      Prefix-Width:  h68x7x30  (tolerance BEFORE width digit)
+      Prefix-Height: 8xh68x30  (tolerance BEFORE height digit)
     Returns {width, height, length} or None.
     """
-    # First try: Tolerance on WIDTH (1st dim) e.g. 8H9X7X36 or 8h6X7X30
-    pattern_tol_width = r'(\d+(?:[.,]\d+)?)[hH]\d+\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)'
-    match = re.search(pattern_tol_width, text)
+    # 1. Suffix on WIDTH: 8h6x7x30 or 8H9X7X36
+    match = re.search(r'(\d+(?:[.,]\d+)?)[hH]\d+\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)', text)
     if match:
         try:
             dims = [float(d.replace(',', '.')) for d in match.groups()]
-            return {
-                "width": dims[0],
-                "height": dims[1],
-                "length": dims[2]
-            }
+            return {"width": dims[0], "height": dims[1], "length": dims[2]}
         except ValueError:
             pass
     
-    # Second try: Tolerance on HEIGHT (2nd dim) e.g. 8X7h7X30
-    pattern_tol_height = r'(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)[hH]\d+\s*[xX]\s*(\d+(?:[.,]\d+)?)'
-    match = re.search(pattern_tol_height, text)
+    # 2. Suffix on HEIGHT: 8x7h7x30
+    match = re.search(r'(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)[hH]\d+\s*[xX]\s*(\d+(?:[.,]\d+)?)', text)
     if match:
         try:
             dims = [float(d.replace(',', '.')) for d in match.groups()]
-            return {
-                "width": dims[0],
-                "height": dims[1],
-                "length": dims[2]
-            }
+            return {"width": dims[0], "height": dims[1], "length": dims[2]}
         except ValueError:
             pass
     
-    # Standard 3D pattern: 20x12x100 or 20X12X100
-    pattern_3d = r'(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)'
-    match = re.search(pattern_3d, text)
+    # 3. Prefix on HEIGHT: 8xh68x30 (h6 before height digit 8)
+    match = re.search(r'(\d+(?:[.,]\d+)?)\s*[xX]\s*[hH][678]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)', text)
     if match:
         try:
             dims = [float(d.replace(',', '.')) for d in match.groups()]
-            return {
-                "width": dims[0],
-                "height": dims[1],
-                "length": dims[2]
-            }
+            return {"width": dims[0], "height": dims[1], "length": dims[2]}
+        except ValueError:
+            pass
+    
+    # 4. Prefix on WIDTH: h68x7x30 (h6 before width digit 8)
+    match = re.search(r'[hH][678]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)', text)
+    if match:
+        try:
+            dims = [float(d.replace(',', '.')) for d in match.groups()]
+            return {"width": dims[0], "height": dims[1], "length": dims[2]}
+        except ValueError:
+            pass
+    
+    # 5. Standard 3D: 20x12x100
+    match = re.search(r'(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)', text)
+    if match:
+        try:
+            dims = [float(d.replace(',', '.')) for d in match.groups()]
+            return {"width": dims[0], "height": dims[1], "length": dims[2]}
         except ValueError:
             pass
             
-    # Pattern for 2 dimensions: 20x12
-    pattern_2d = r'(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)'
-    match = re.search(pattern_2d, text)
+    # 6. Standard 2D: 20x12
+    match = re.search(r'(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)', text)
     if match:
         try:
             dims = [float(d.replace(',', '.')) for d in match.groups()]
-            return {
-                "width": dims[0],
-                "height": dims[1],
-                "length": None
-            }
+            return {"width": dims[0], "height": dims[1], "length": None}
         except ValueError:
             pass
 
@@ -163,44 +164,57 @@ def extract_features_from_string(text: str) -> List[Dict[str, str]]:
 def extract_shaft_tolerance(text: str) -> Dict[str, str]:
     """
     Extracts shaft tolerance (h6, h7, h8) and determines which dimension it applies to.
-    
-    Cases:
-      1. Glued to width:  "8h6×7×30"  → spec=h6, position=width
-      2. Glued to height: "8×7h7×30"  → spec=h7, position=height
-      3. Standalone:      "h6 8×7×30" or "8×7×30 h6" → spec=h6, position=width
-      4. Nothing found:   "8×7×30"    → spec=h9, position=width (default)
+    Handles both suffix (8h6x7x30) and prefix (h68x7x30, 8xh68x30) formats.
     
     Returns: {"spec": "h6", "position": "width"}
     """
     VALID_TOLERANCES = ["h6", "h7", "h8"]
     
-    # Case 2 FIRST (more specific): Tolerance glued to HEIGHT (2nd dimension) e.g. 8×7h7×30
-    # Must have WxH pattern before the tolerance
-    match_height = re.search(r'\d+(?:[.,]\d+)?\s*[xX]\s*(\d+(?:[.,]\d+)?)(h[678])\s*[xX]\s*\d+', text, re.IGNORECASE)
-    if match_height:
-        spec = match_height.group(2).lower()
+    # --- SUFFIX patterns (tolerance AFTER the digit) ---
+    
+    # Suffix on HEIGHT: 8×7h7×30 (h7 after height digit)
+    match = re.search(r'\d+(?:[.,]\d+)?\s*[xX]\s*\d+(?:[.,]\d+)?(h[678])\s*[xX]\s*\d+', text, re.IGNORECASE)
+    if match:
+        spec = match.group(1).lower()
         if spec in VALID_TOLERANCES:
-            logger.info(f"Shaft tolerance '{spec}' detected on HEIGHT")
+            logger.info(f"Shaft tolerance '{spec}' detected (suffix on HEIGHT)")
             return {"spec": spec, "position": "height"}
     
-    # Case 1: Tolerance glued to WIDTH (1st dimension) e.g. 8h6×7×30
-    # Must NOT be preceded by xX (to avoid matching height case)
-    match_width = re.search(r'(?<![xX\s])(\d+(?:[.,]\d+)?)(h[678])\s*[xX]\s*\d+', text, re.IGNORECASE)
-    if match_width:
-        spec = match_width.group(2).lower()
+    # Suffix on WIDTH: 8h6×7×30 (h6 after width digit, NOT preceded by xX)
+    match = re.search(r'(?<![xX])\d+(?:[.,]\d+)?(h[678])\s*[xX]\s*\d+', text, re.IGNORECASE)
+    if match:
+        spec = match.group(1).lower()
         if spec in VALID_TOLERANCES:
-            logger.info(f"Shaft tolerance '{spec}' detected on WIDTH")
+            logger.info(f"Shaft tolerance '{spec}' detected (suffix on WIDTH)")
             return {"spec": spec, "position": "width"}
     
-    # Case 3: Standalone tolerance before or after dimensions e.g. "h6 8×7×30" or "8×7×30 h6"
-    match_standalone = re.search(r'(?:^|[\s\-])(h[678])(?:[\s\-]|$)', text, re.IGNORECASE)
-    if match_standalone:
-        spec = match_standalone.group(1).lower()
+    # --- PREFIX patterns (tolerance BEFORE the digit) ---
+    
+    # Prefix on HEIGHT: 8xh68x30 (h6 before height digit, after x)
+    match = re.search(r'\d+\s*[xX]\s*(h[678])\s*\d+\s*[xX]\s*\d+', text, re.IGNORECASE)
+    if match:
+        spec = match.group(1).lower()
         if spec in VALID_TOLERANCES:
-            logger.info(f"Shaft tolerance '{spec}' detected standalone → defaulting to WIDTH")
+            logger.info(f"Shaft tolerance '{spec}' detected (prefix on HEIGHT)")
+            return {"spec": spec, "position": "height"}
+    
+    # Prefix on WIDTH: h68x7x30 (h6 before width digit, at start)
+    match = re.search(r'(?:^|[\s\-])(h[678])\s*\d+\s*[xX]\s*\d+\s*[xX]\s*\d+', text, re.IGNORECASE)
+    if match:
+        spec = match.group(1).lower()
+        if spec in VALID_TOLERANCES:
+            logger.info(f"Shaft tolerance '{spec}' detected (prefix on WIDTH)")
             return {"spec": spec, "position": "width"}
     
-    # Case 4: No tolerance found → default h9 on width
+    # --- STANDALONE (tolerance separated by space/letter, not glued to any digit) ---
+    match = re.search(r'(?:^|[^\d])(h[678])(?:[^0-9xX]|$)', text, re.IGNORECASE)
+    if match:
+        spec = match.group(1).lower()
+        if spec in VALID_TOLERANCES:
+            logger.info(f"Shaft tolerance '{spec}' detected (standalone → defaults to WIDTH)")
+            return {"spec": spec, "position": "width"}
+    
+    # Default: h9 on width
     return {"spec": "h9", "position": "width"}
 
 
