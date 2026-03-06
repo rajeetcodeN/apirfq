@@ -555,10 +555,16 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             
             if not target_line and article_name_ai:
                  parts = article_name_ai.split('-')
-                 significant_parts = [p for p in parts if len(p) > 3]
+                 # Consider parts length >= 3 significant (e.g. dimensions '8X7X40')
+                 significant_parts = [p for p in parts if len(p) >= 3]
                  
                  for line in source_lines:
-                     if len(significant_parts) >= 2 and all(part in line for part in significant_parts):
+                     # 1. Exact or near-exact match
+                     if article_name_ai in line.strip() or line.strip() in article_name_ai:
+                         target_line = line
+                         break
+                     # 2. Match based on significant parts
+                     if len(significant_parts) >= 1 and all(part in line for part in significant_parts):
                          target_line = line
                          break
             
@@ -595,23 +601,42 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                 ai_l = ai_dims.get("length")
                 
                 # Search each source line for one that correlates with this item's dims
+                best_src_line = None
+                best_src_score = -1
+                best_src_dims = None
+                ai_features = [f.get("spec", "").upper() for f in config.get("features", []) if f.get("spec")]
+                
                 for src_line in source_lines:
                     if not src_line.strip():
                         continue
                     src_line_dims = parse_dimensions_from_string(src_line)
-                    if not src_line_dims or not src_line_dims.get("length"):
+                    if not src_line_dims:
                         continue
-                    # Match: source line must share width OR length with AI's extraction
-                    if ai_w and src_line_dims.get("width") == ai_w:
-                        strict_dims = src_line_dims
-                        text_to_scan = src_line  # Update so tolerance extraction uses this line
-                        logger.info(f"Validator: Re-parsed dims from source line (matched width={ai_w}) for Pos {pos}: {src_line_dims}")
-                        break
-                    if ai_l and src_line_dims.get("length") == ai_l:
-                        strict_dims = src_line_dims
-                        text_to_scan = src_line
-                        logger.info(f"Validator: Re-parsed dims from source line (matched length={ai_l}) for Pos {pos}: {src_line_dims}")
-                        break
+                    
+                    # Match: source line must share both width and length if available
+                    match_w = (ai_w is not None and src_line_dims.get("width") == ai_w)
+                    match_l = (ai_l is not None and src_line_dims.get("length") == ai_l)
+                    
+                    is_dim_match = False
+                    if ai_l is not None:
+                        if match_w and match_l: is_dim_match = True
+                    else:
+                        if match_w and src_line_dims.get("length") is None: is_dim_match = True
+                        
+                    if is_dim_match:
+                        # Score the match based on how many AI features are in the source line
+                        src_features = [f["spec"].upper() for f in extract_features_from_string(src_line) if f.get("spec")]
+                        score = sum(1 for feat in ai_features if feat in src_features)
+                        
+                        if score > best_src_score:
+                            best_src_score = score
+                            best_src_line = src_line
+                            best_src_dims = src_line_dims
+                            
+                if best_src_line:
+                    strict_dims = best_src_dims
+                    text_to_scan = best_src_line
+                    logger.info(f"Validator: Re-parsed dims from best scored source line for Pos {pos}: {best_src_dims} (score: {best_src_score})")
             if strict_dims and strict_dims.get("length"):
                  # Trust Regex over AI for Dimensions.
                  config["dimensions"] = strict_dims
