@@ -68,15 +68,17 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
         - H-tolerances (H7, H9) -> type "tolerance" 
         - Shaft tolerances (h6, h7, h8) -> type "tolerance" with "position" field
         - NZG (Nutenzugabe/groove allowance) -> type "coating"
-      * **SHAFT TOLERANCE (h6/h7/h8)**: Extract the shaft tolerance and identify WHICH dimension it applies to.
+      * **SHAFT TOLERANCE (h6/h7/h8/h9)**: Extract the shaft tolerance and identify WHICH dimension it applies to.
         There are 5 possible formats:
         1. Suffix on width:  "8h6x7x30"  -> spec=h6, position=width  (h6 AFTER width digit)
         2. Suffix on height: "8x7h7x30"  -> spec=h7, position=height (h7 AFTER height digit)
         3. Prefix on width:  "h68x7x30"  -> spec=h6, position=width  (h6 BEFORE width digit)
         4. Prefix on height: "8xh68x30"  -> spec=h6, position=height (h6 BEFORE height digit)
         5. Standalone:       "h6 8x7x30" -> spec=h6, position=width  (h6 separated by space)
-        - **DANGER**: DO NOT invent, assume, or copy tolerances from other line items.
-        - If NO shaft tolerance is physically written on THIS specific line item, you MUST NOT extract one. Return an empty features list for the tolerance. Do NOT default to h9 or h7 unless it is hardcoded in the text.
+        - **CRITICAL — ITEM ISOLATION**: Each line item is COMPLETELY INDEPENDENT. You must evaluate each item's tolerance ONLY from the characters written in that specific item's text. NEVER copy, inherit, or infer a tolerance from a different item, even if the items look similar.
+        - **DEFAULT RULE**: If and ONLY if no shaft tolerance (h6/h7/h8/h9) is physically written for this specific item -> default to {type:"tolerance", spec:"h9", position:"width"}.
+        - **WRONG EXAMPLE**: Item 6 has "10x8h7x50" (h7). Items 1-4 have NO tolerance in text. Do NOT apply h7 to items 1-4. They must default to h9 on width.
+        - **RIGHT EXAMPLE**: Item 1 "PF C 12x8x50 C60" -> no tolerance written -> features: [{type:"tolerance", spec:"h9", position:"width"}]
       * **CONSTRAINT**: Only extract M-codes between M1 and M21.
       * Example: "AS-8h6X7X36-M4-NZG" -> features: [{type:"tolerance",spec:"h6",position:"width"},{type:"thread",spec:"M4"},{type:"coating",spec:"NZG"}]
     - heat_treatment: Extracted heat treatment spec (e.g., "geh.50-55HRC", "verg.90-100", "geh.56-60 0,3-0,5", "N533"). Units like HRC/HV may be omitted.
