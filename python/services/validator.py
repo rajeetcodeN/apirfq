@@ -410,96 +410,96 @@ def calculate_confidence(item: Dict[str, Any], raw_text_snippet: str) -> float:
     """
     Calculates a rule-based confidence score (0.0 to 1.0) for an item.
     """
-    score = 1.0
-    issues = []
-    
+    issues: List[str] = []
+    penalties: List[float] = []
+
     config = item.get("config", {})
-    
+
     # Check if raw_text_snippet is None or empty
     if not raw_text_snippet:
-        return 0.5 # Default low confidence if no text to check against
-    
+        return 0.5  # Default low confidence if no text to check against
+
+    snippet: str = str(raw_text_snippet)
+
     # 1. Check for NULL / Empty Dimensions (Passfeder MUST have dimensions)
     dims_in_json = config.get("dimensions", {}) or {}
     has_any_dim = any(v is not None and v != 0 for v in dims_in_json.values()) if dims_in_json else False
-    
+
     if not has_any_dim:
-        score -= 0.4
+        penalties.append(0.4)
         issues.append("All dimensions are null/empty - Passfeder must have dimensions")
-    
+
     # 1b. Check for Missing Dimensions if they seem present in text
-    dims_in_text = parse_dimensions_from_string(raw_text_snippet)
-    
+    dims_in_text = parse_dimensions_from_string(snippet)
+
     if dims_in_text and not has_any_dim:
-        score -= 0.3
+        penalties.append(0.3)
         issues.append("Dimensions found in text but missed in JSON")
-        
+
     # 2. Check for Feature Mismatches (e.g. M-codes)
-    text_features = extract_features_from_string(raw_text_snippet)
+    text_features = extract_features_from_string(snippet)
     json_features = config.get("features", [])
-    
+
     for tf in text_features:
         if not any(jf.get("spec") == tf["spec"] for jf in json_features):
-            score -= 0.2
+            penalties.append(0.2)
             issues.append(f"Feature {tf['spec']} missed")
-            
-    # 3. Check for weird Form codes (single letters that might be dimensions labels)
+
+    # 3. Check for weird Form codes (single letters that might be dimension labels)
     form = config.get("form", "")
-    if form and len(form) == 1 and f"{form}=" in raw_text_snippet.replace(" ", ""):
-        # e.g. Form="B" but text has "B=20"
-        score -= 0.4
+    if form and len(form) == 1 and f"{form}=" in snippet.replace(" ", ""):
+        penalties.append(0.4)
         issues.append(f"Form '{form}' matches dimension label pattern")
-        
+
     # Check for Form/Dimension confusion (e.g., config has Form="B" but text has "B=...")
-    if config.get("form") == "B" and "B=" in raw_text_snippet:
-        score -= 0.4
+    if config.get("form") == "B" and "B=" in snippet:
+        penalties.append(0.4)
         issues.append("Potential Form/Dimension confusion (Form B vs B=Width)")
 
     # Check for Invalid Materials (Strict Whitelist)
-    # The whitelist logic: If a material is extracted, verify it against known valid codes.
-    VALID_MATERIALS = ["C45", "C45+C", "C45K", "42CrMo4", "1.4301", "1.4305", "1.4571", "1.4404", "1.4057"]
+    VALID_MATERIALS_CHECK = ["C45", "C45+C", "C45K", "42CrMo4", "1.4301", "1.4305", "1.4571", "1.4404", "1.4057"]
     mat = config.get("material", "")
     if mat:
-        # Check if it's a valid slash-separated combo or single value
-        # Normalize by stripping spaces
-        parts = [m.strip() for m in mat.split("/")]
-        # If ANY part is invalid, penalize
-        if not all(p in VALID_MATERIALS for p in parts):
-            score -= 0.3
+        parts = [m.strip() for m in str(mat).split("/")]
+        if not all(p in VALID_MATERIALS_CHECK for p in parts):
+            penalties.append(0.3)
             issues.append(f"Invalid material detected: {mat}")
 
     # Check for Invalid M-Codes (Range M1 - M21)
     features = config.get("features", [])
     for feat in features:
-        spec = feat.get("spec", "").strip().upper()
+        spec_raw: str = str(feat.get("spec", ""))
+        spec: str = spec_raw.strip().upper()
         if spec.startswith("M"):
             try:
-                # Extract number part (e.g. "M6" -> 6, "M10X1" -> 10)
-                # Handle standard threads "M6" and fine threads "M10x1"
+                spec_tail: str = spec.replace("M", "", 1)  # avoids Pyre2 indexing bug
                 num_part = ""
-                for char in spec[1:]:
+                for char in spec_tail:
                     if char.isdigit() or char == '.':
                         num_part += char
                     else:
-                        break # Stop at 'x' or other non-digit
-                
+                        break
                 if num_part:
                     val = float(num_part)
-                    if not (1 <= val <= 21): # Strict Range M1 - M21
-                        score -= 0.3
+                    if not (1 <= val <= 21):
+                        penalties.append(0.3)
                         issues.append(f"M-code out of range (M1-M21): {spec}")
             except Exception:
-                pass # Ignore parsing errors
+                pass
 
     # 4. Check for Empty Form if "Form" keyword is in text
-    if "Form" in raw_text_snippet and not form:
-        score -= 0.1
+    if "Form" in snippet and not form:
+        penalties.append(0.1)
         issues.append("Form keyword present but not extracted")
 
-    if score < 1.0:
+    total_penalty: float = sum(penalties)
+    score: float = max(0.0, 1.0 - total_penalty)
+
+    if issues:
         logger.info(f"Validator Confidence Reduced for {item.get('pos')}: {score:.2f} -> Issues: {issues}")
-        
-    return max(0.0, score)
+
+    return score
+
 
 
 def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_text: str) -> List[Dict[str, Any]]:
@@ -570,10 +570,11 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             
             # If we still couldn't find the raw line, flag it
             used_fallback = False
+            text_to_scan: str
             if target_line:
-                text_to_scan = target_line
+                text_to_scan = str(target_line)
             elif article_name_ai:
-                text_to_scan = article_name_ai
+                text_to_scan = str(article_name_ai)
                 used_fallback = True
                 logger.warning(f"Validator: Could not find raw line for Pos {pos}, falling back to article_name (unreliable)")
             else:
@@ -635,7 +636,7 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                             
                 if best_src_line:
                     strict_dims = best_src_dims
-                    text_to_scan = best_src_line
+                    text_to_scan = str(best_src_line)
                     logger.info(f"Validator: Re-parsed dims from best scored source line for Pos {pos}: {best_src_dims} (score: {best_src_score})")
             if strict_dims and strict_dims.get("length"):
                  # Trust Regex over AI for Dimensions.
@@ -650,13 +651,10 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             
             # 3a. EXTRACT SHAFT TOLERANCE (h6/h7/h8, default h9)
             shaft_tol = extract_shaft_tolerance(text_to_scan)
-            # If we got the default h9 and the snippet was a fallback,
-            # also try the full source_text — the tolerance might be elsewhere in the line
-            if shaft_tol["spec"] == "h9" and source_text:
-                shaft_tol_full = extract_shaft_tolerance(source_text)
-                if shaft_tol_full["spec"] != "h9":
-                    shaft_tol = shaft_tol_full
-                    logger.info(f"Validator: Shaft tolerance found in full source text (fallback recovery)")
+            # NOTE: Full-source-text fallback intentionally removed.
+            # In multi-item documents, searching the entire source text finds the first
+            # h-tolerance anywhere in the doc and bleeds it into every other position.
+            # If no tolerance is found in the per-item snippet, keep the h9 default.
             # Remove any existing shaft tolerance feature to avoid duplicates
             current_features = [f for f in current_features if not (
                 f.get("feature_type") == "tolerance" and f.get("spec", "").lower().startswith("h") and f.get("spec", "").lower() in ["h6", "h7", "h8", "h9"]
