@@ -75,7 +75,8 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
         3. Prefix on width:  "h68x7x30"  -> spec=h6, position=width  (h6 BEFORE width digit)
         4. Prefix on height: "8xh68x30"  -> spec=h6, position=height (h6 BEFORE height digit)
         5. Standalone:       "h6 8x7x30" -> spec=h6, position=width  (h6 separated by space)
-        - If NO shaft tolerance is stated -> default to {type:"tolerance", spec:"h9", position:"width"}
+        - **DANGER**: DO NOT invent, assume, or copy tolerances from other line items.
+        - If NO shaft tolerance is physically written on THIS specific line item, you MUST NOT extract one. Return an empty features list for the tolerance. Do NOT default to h9 or h7 unless it is hardcoded in the text.
       * **CONSTRAINT**: Only extract M-codes between M1 and M21.
       * Example: "AS-8h6X7X36-M4-NZG" -> features: [{type:"tolerance",spec:"h6",position:"width"},{type:"thread",spec:"M4"},{type:"coating",spec:"NZG"}]
     - heat_treatment: Extracted heat treatment spec (e.g., "geh.50-55HRC", "verg.90-100", "geh.56-60 0,3-0,5", "N533"). Units like HRC/HV may be omitted.
@@ -150,7 +151,7 @@ USER_PROMPT_TEMPLATE = """Extract ALL line items and document information from t
 
 Return ONLY valid JSON with no markdown formatting."""
 
-def extract_data_from_text(text: str, native_text: str = None, user_feedback: str = None) -> Dict[str, Any]:
+def extract_data_from_text(text: str, native_text: Optional[str] = None, user_feedback: Optional[str] = None) -> Dict[str, Any]:
     """
     Sends the masked text to Mistral AI for extraction.
     Native text is user for post-validation (regex overrides).
@@ -281,7 +282,7 @@ def extract_data_from_text(text: str, native_text: str = None, user_feedback: st
         logger.error(f"Mistral API Error: {e}")
         raise e
 
-async def extract_data_from_text_async(text: str, native_text: str = None, user_feedback: str = None) -> Dict[str, Any]:
+async def extract_data_from_text_async(text: str, native_text: Optional[str] = None, user_feedback: Optional[str] = None) -> Dict[str, Any]:
     """
     Async wrapper for extraction. Runs the full text as a single AI call.
     No chunking - full context is always preserved.
