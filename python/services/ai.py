@@ -192,7 +192,7 @@ def extract_data_from_text(text: str, native_text: Optional[str] = None, user_fe
     }
     
     payload = {
-        "model": "mistral-small-latest", # Switching back to Small (User: "small is fast")
+        "model": "mistral-medium-latest", # Switching to Medium for higher accuracy
         "messages": [
             {"role": "system", "content": system_prompt_with_context},
             {"role": "user", "content": USER_PROMPT_TEMPLATE.replace("{TEXT}", text)}
