@@ -146,6 +146,8 @@ async def route_ingestion(file_bytes: bytes, mime_type: str, filename: str) -> D
         # 4. Text / CSV
         if extension in ['txt', 'csv'] or mime_type.startswith('text/'):
             text = file_bytes.decode('utf-8', errors='ignore')
+            # Add leading and trailing newlines to help Mistral AI separate context from items
+            text = f"\n\n{text.strip()}\n"
             return {"raw_data": text, "source": "native_text", "mime_type": mime_type}
 
         # 5. Images (JPG, PNG, TIFF) - Use Mistral OCR directly

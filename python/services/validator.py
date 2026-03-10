@@ -522,6 +522,35 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
     # Split source text into lines for line-by-line searching
     source_lines = source_text.split('\n')
     
+    # --- Sequential Line Mapping (Fallback Pre-processor) ---
+    # For simple text files (like "PFC 8h7x6x12..."), AI might hallucinate dims while
+    # missing pos numbers. If we find exactly N product lines and N items, map them 1-to-1.
+    sequential_map: Dict[str, str] = {}
+    
+    # 1. Identify product lines (lines with dimensions, ignoring pure noise/headers)
+    product_lines = []
+    for line in source_lines:
+        if not line.strip(): continue
+        # A simplistic check: does it have numbers and an 'x' (or 'X')? Or "Form"/"DIN"?
+        if re.search(r'\d+\s*[xX]\s*\d+', line) or re.search(r'(?i)(?:Form|DIN|PF|Passfeder)', line):
+            product_lines.append(line)
+            
+    # 2. Check if we can safely do a 1-to-1 mapping
+    is_safe_to_sequence = False
+    if len(product_lines) == len(items) and len(items) > 0:
+        # Check if the text lines lack explicit position numbers (1. or Pos 1)
+        # If they lack explicit numbers, they are a good candidate for sequential mapping.
+        has_explicit_pos_in_text = any(re.match(r'^\s*(?:Pos\.?|Position)?\s*\d+[\.\s]', line, re.IGNORECASE) for line in product_lines)
+        if not has_explicit_pos_in_text:
+            is_safe_to_sequence = True
+            
+    if is_safe_to_sequence:
+        logger.info(f"Validator: Sequential mapping activated for {len(items)} items")
+        for i, item in enumerate(items):
+            pos_id = str(item.get("pos", ""))
+            sequential_map[pos_id] = product_lines[i]
+            
+    # --- Item Processing Loop ---
     for item in items:
         # Initialize metadata if not present
         if "metadata" not in item:
@@ -576,6 +605,11 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                      if len(significant_parts) >= 1 and all(part in line for part in significant_parts):
                          target_line = line
                          break
+                         
+            # 3. SEQUENTIAL LINE MAPPING FALLBACK
+            if not target_line and pos in sequential_map:
+                target_line = sequential_map[pos]
+                logger.info(f"Validator: Used sequential mapping fallback for Pos {pos}")
             
             # If we still couldn't find the raw line, flag it
             used_fallback = False
