@@ -87,9 +87,12 @@ MATERIAL_FIX_MAP = {
     "P885-C45+C": "C45+C",
     "P85-C45+C": "C45+C",
     "P85-C45C": "C45+C",
+    "C60": "C60E",
     # Stainless keywords
     "VA": "1.4301",
     "STAINLESS": "1.4301",
+    "EDELSTAHL": "1.4301",
+    "ROSTFREI": "1.4301",
 }
 
 def fix_material(material: str) -> str:
@@ -109,6 +112,12 @@ def fix_material(material: str) -> str:
     # 1. Exact match in known fixes
     if material_clean in MATERIAL_FIX_MAP:
         fixed = MATERIAL_FIX_MAP[material_clean]
+        logger.info(f"Material auto-corrected: '{material}' -> '{fixed}'")
+        return fixed
+    
+    # 1a. Case-insensitive match in known fixes
+    if material_clean.upper() in MATERIAL_FIX_MAP:
+        fixed = MATERIAL_FIX_MAP[material_clean.upper()]
         logger.info(f"Material auto-corrected: '{material}' -> '{fixed}'")
         return fixed
     
@@ -142,7 +151,7 @@ def fix_material(material: str) -> str:
             return mat_num
     
     # 6. Check for VA / STAINLESS keywords
-    if material_clean.upper() in ["VA", "STAINLESS", "V2A", "V4A"]:
+    if material_clean.upper() in ["VA", "STAINLESS", "V2A", "V4A", "EDELSTAHL", "ROSTFREI"]:
         fixed = MATERIAL_FIX_MAP.get(material_clean.upper(), "1.4301")
         logger.info(f"Material keyword recognized: '{material}' -> '{fixed}'")
         return fixed
@@ -614,15 +623,16 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                     if not src_line_dims:
                         continue
                     
-                    # Match: source line must share both width and length if available
+                    # Match: source line must share width, height, and length if available
                     match_w = (ai_w is not None and src_line_dims.get("width") == ai_w)
+                    match_h = (ai_dims.get("height") is not None and src_line_dims.get("height") == ai_dims.get("height"))
                     match_l = (ai_l is not None and src_line_dims.get("length") == ai_l)
                     
                     is_dim_match = False
                     if ai_l is not None:
-                        if match_w and match_l: is_dim_match = True
+                        if match_w and match_h and match_l: is_dim_match = True
                     else:
-                        if match_w and src_line_dims.get("length") is None: is_dim_match = True
+                        if match_w and match_h and src_line_dims.get("length") is None: is_dim_match = True
                         
                     if is_dim_match:
                         # Score the match based on how many AI features are in the source line
