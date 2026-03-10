@@ -76,8 +76,6 @@ MATERIAL_FIX_MAP = {
     # C45 variants all map to C45+C
     "1.0503": "C45+C",
     "C45E": "C45+C",
-    "C50": "C45+C",
-    "C50E": "C45+C",
     "C45K": "C45+C",
     "C45C": "C45+C",
     "P5K": "C45+C",

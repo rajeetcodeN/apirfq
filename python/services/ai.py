@@ -44,7 +44,7 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
         - International: ASTM A36, GB Q235, JIS SCM440
       * **DIN NUMBERS**: Also extract material numbers like 1.4301, 1.4571, 1.7225, 1.0503, etc.
       * **KEYWORDS**: "VA", "V2A", "V4A", "STAINLESS" all refer to stainless steel.
-      * **C45 VARIANTS**: Normalize ALL C45 variants (C45, C45K, C45C, C45E, C45R, C50, C50E) and the number "1.0503" -> "C45+C".
+      * **C45 VARIANTS**: Normalize ALL C45 variants (C45, C45K, C45C, C45E, C45R) and the number "1.0503" -> "C45+C".
       * **IGNORE**: "P5K", "P85", "P100" (these are packaging/position codes, NOT materials).
     - dimensions: Object with `width`, `height`, `length` (numeric values).
       * **CRITICAL**: Prioritize dimensions found WITHIN the article string (e.g., "20X12X50" -> Length=50).
