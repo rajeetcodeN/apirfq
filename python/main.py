@@ -46,8 +46,9 @@ app.add_middleware(
 # Instantiate Services
 correction_service = CorrectionService()
 
-# n8n Webhook for parallel safety extraction
-N8N_WEBHOOK_URL = "https://nosta.app.n8n.cloud/webhook/60573ec2-ab96-4470-9c3c-dcba96c5264e"
+# n8n Webhook for parallel safety extraction (On hold per user request)
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "https://nosta.app.n8n.cloud/webhook/60573ec2-ab96-4470-9c3c-dcba96c5264e")
+ENABLE_N8N_VALIDATION = os.getenv("ENABLE_N8N_VALIDATION", "false").lower() == "true"
 
 async def send_to_n8n(file_bytes: bytes, filename: str) -> dict:
     """Send raw file to n8n webhook and wait for extracted data response."""
@@ -300,8 +301,12 @@ async def process_file(file: UploadFile = File(...)):
         # Read file bytes
         file_bytes = await file.read()
         
-        # Start n8n extraction in parallel (runs while our pipeline processes)
-        n8n_task = asyncio.create_task(send_to_n8n(file_bytes, file.filename))
+        # Start n8n extraction in parallel (Only if enabled)
+        n8n_task = None
+        if ENABLE_N8N_VALIDATION:
+            n8n_task = asyncio.create_task(send_to_n8n(file_bytes, file.filename))
+        else:
+            logger.info("n8n validation is currently ON HOLD (skipped)")
         
         # 1. Ingestion
         try:
@@ -386,17 +391,17 @@ async def process_file(file: UploadFile = File(...)):
             }
         }
         
-        # 5. Cross-validate with n8n results (n8n_task was started in parallel earlier)
-        # We wait MAX 120 seconds for n8n (User requested > 200s capability for large file holistic processing).
-        try:
-            n8n_data = await asyncio.wait_for(n8n_task, timeout=120.0)
-            if n8n_data and "requested_items" in ai_data:
-                ai_data["requested_items"] = cross_validate(ai_data["requested_items"], n8n_data)
-                logger.info("n8n cross-validation complete")
-        except asyncio.TimeoutError:
-            logger.warning(f"n8n cross-validation TIMED OUT (>120s): Returning AI data without cross-check.")
-        except Exception as e:
-            logger.warning(f"n8n cross-validation skipped: {e}")
+        # 5. Cross-validate with n8n results (if enabled)
+        if ENABLE_N8N_VALIDATION and n8n_task:
+            try:
+                n8n_data = await asyncio.wait_for(n8n_task, timeout=120.0)
+                if n8n_data and "requested_items" in ai_data:
+                    ai_data["requested_items"] = cross_validate(ai_data["requested_items"], n8n_data)
+                    logger.info("n8n cross-validation complete")
+            except asyncio.TimeoutError:
+                logger.warning(f"n8n cross-validation TIMED OUT (>120s): Returning AI data without cross-check.")
+            except Exception as e:
+                logger.warning(f"n8n cross-validation skipped: {e}")
         
         return response_payload
 

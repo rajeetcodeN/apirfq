@@ -275,7 +275,7 @@ def extract_data_from_text(text: str, native_text: Optional[str] = None, user_fe
     }
     
     payload = {
-        "model": "mistral-medium-latest", # Switching to Medium for higher accuracy
+        "model": "mistral-medium-latest", # Reverting to Medium per user override
         "messages": [
             {"role": "system", "content": system_prompt_with_context},
             {"role": "user", "content": USER_PROMPT_TEMPLATE.replace("{TEXT}", text)}
@@ -376,8 +376,8 @@ async def extract_data_from_text_async(text: str, native_text: Optional[str] = N
         raise ValueError("No text provided")
 
     # 1. Chunk the text
-    # We use 15 items per chunk for optimal speed and to prevent timeouts on complex docs
-    chunks = chunk_text_by_anchors(text, items_per_chunk=15)
+    # We use 25 items per chunk to reduce parallel overhead while keeping responses fast
+    chunks = chunk_text_by_anchors(text, items_per_chunk=25)
     
     if len(chunks) == 1:
         # Fallback to standard single call for small files

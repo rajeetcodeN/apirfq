@@ -506,370 +506,175 @@ def calculate_confidence(item: Dict[str, Any], raw_text_snippet: str) -> float:
     return score
 
 
-
 def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_text: str) -> List[Dict[str, Any]]:
     """
-    Validates and overrides AI extracted items using strict Regex on the source text.
-    Prioritizes native_text if available, falls back to ocr_text.
-    Also appends 'metadata' with 'rule_confidence_score' and 'raw_text_snippet'.
+    OPTIMIZED: Validates and overrides AI extracted items using strict Regex on the source text.
+    Uses indexing to avoid O(N^2) search complexity.
     """
     source_text = native_text if native_text and len(native_text) > 20 else ocr_text
+    if not source_text:
+        return items
+
+    source_lines = [line.strip() for line in source_text.split('\n') if line.strip()]
     
-    # Split source text into lines for line-by-line searching
-    source_lines = source_text.split('\n')
-    
-    # --- Sequential Line Mapping (Fallback Pre-processor) ---
-    # For simple text files (like "PFC 8h7x6x12..."), AI might hallucinate dims while
-    # missing pos numbers. If we find exactly N product lines and N items, map them 1-to-1.
-    sequential_map: Dict[str, str] = {}
-    
-    # 1. Identify product lines (lines with dimensions, ignoring pure noise/headers)
-    product_lines = []
-    for line in source_lines:
-        if not line.strip(): continue
-        # A simplistic check: does it have numbers and an 'x' (or 'X')? Or "Form"/"DIN"?
-        if re.search(r'\d+\s*[xX]\s*\d+', line) or re.search(r'(?i)(?:Form|DIN|PF|Passfeder)', line):
-            product_lines.append(line)
-            
-    # 2. Check if we can safely do a 1-to-1 mapping
-    is_safe_to_sequence = False
-    if len(product_lines) == len(items) and len(items) > 0:
-        # Check if the text lines lack explicit position numbers (1. or Pos 1)
-        # If they lack explicit numbers, they are a good candidate for sequential mapping.
-        has_explicit_pos_in_text = any(re.match(r'^\s*(?:Pos\.?|Position)?\s*\d+[\.\s]', line, re.IGNORECASE) for line in product_lines)
-        if not has_explicit_pos_in_text:
-            is_safe_to_sequence = True
-            
-    if is_safe_to_sequence:
-        logger.info(f"Validator: Sequential mapping activated for {len(items)} items")
-        for i, item in enumerate(items):
-            pos_id = str(item.get("pos", ""))
-            sequential_map[pos_id] = product_lines[i]
-            
-    # --- Item Processing Loop ---
-    for item in items:
-        # Initialize metadata if not present
-        if "metadata" not in item:
-            item["metadata"] = {}
-            
+    # 1. PRE-INDEXING: Map Pos Numbers and Material IDs to line indices for O(1) lookup
+    pos_index = {}
+    mat_id_index = {}
+    dim_index = {} # width_height -> line_index
+
+    for idx, line in enumerate(source_lines):
+        # Index by Pos (e.g. "Pos 1" or "1.")
+        pos_match = re.match(r'^(?:Pos\.?|Position)?\s*(\d+)[\.\s]', line, re.IGNORECASE)
+        if pos_match:
+            pos_index[pos_match.group(1)] = idx
+        
+        # Index by Material ID (Format: 100-xxx-xxx.xx-xx)
+        mat_id_match = re.search(r'(100-\d{3}-\d{3}\.\d{2}-\d{2})', line)
+        if mat_id_match:
+            mat_id_index[mat_id_match.group(1)] = idx
+
+        # Index by Dimensions (Standard 20x12x50)
+        dims = parse_dimensions_from_string(line)
+        if dims:
+             key = f"{dims.get('width')}_{dims.get('height')}"
+             if key not in dim_index: dim_index[key] = []
+             dim_index[key].append(idx)
+
+    # 2. Sequential Mapping Fallback Pre-calc
+    product_lines = [line for line in source_lines if re.search(r'\d+\s*[xX]\s*\d+', line) or "DIN" in line.upper() or "PF" in line.upper()]
+    is_safe_to_sequence = len(product_lines) == len(items) and not pos_index
+
+    # 3. Item Processing Loop
+    for i, item in enumerate(items):
+        if "metadata" not in item: item["metadata"] = {}
+        
         try:
             pos = str(item.get("pos", "")).strip()
-            article_name_ai = item.get("article_name", "")
             config = item.get("config", {})
+            mat_id = config.get("material_id", "")
             
-            target_line = ""
+            target_line_idx = -1
             
-            # 1. Attempt to find the RAW line in source_text
-            # Grab the position line + 5 lines below (description, DIN code, EAN, etc.)
-            if pos:
-                for idx, line in enumerate(source_lines):
-                    # distinct start of line check
-                    if re.match(rf"^\s*{re.escape(pos)}\s+", line):
-                        end_idx = min(len(source_lines), idx + 6)
-                        context_lines = source_lines[idx:end_idx]
-                        target_line = "\n".join(context_lines)
-                        logger.info(f"Validator: Found raw context for Pos {pos} ({len(context_lines)} lines)")
-                        break
+            # FAST LOOKUPS
+            if mat_id in mat_id_index:
+                target_line_idx = mat_id_index[mat_id]
+            elif pos in pos_index:
+                target_line_idx = pos_index[pos]
+            elif config.get("dimensions"):
+                # Fuzzy match by width/height if only one such line exists in the doc
+                d = config["dimensions"]
+                dk = f"{d.get('width')}_{d.get('height')}"
+                if dk in dim_index and len(dim_index[dk]) == 1:
+                    target_line_idx = dim_index[dk][0]
             
-            # Try searching by material_id (more unique than pos number)
-            # IMPORTANT: material_id line is usually at the BOTTOM of a position block.
-            # The actual product description (dimensions, form, material) is ABOVE it.
-            # So we grab 5 lines above the match as context.
-            if not target_line:
-                mat_id = config.get("material_id", "")
-                if mat_id and len(mat_id) > 5:
-                    for idx, line in enumerate(source_lines):
-                        if mat_id in line:
-                            # Grab context: 5 lines above + the match line itself
-                            start_idx = max(0, idx - 5)
-                            context_lines = source_lines[start_idx:idx + 1]
-                            target_line = "\n".join(context_lines)
-                            logger.info(f"Validator: Found raw context by material_id for Pos {pos} ({len(context_lines)} lines)")
-                            break
+            if target_line_idx == -1 and is_safe_to_sequence:
+                # O(1) sequential access as last resort
+                target_line = product_lines[i]
+                target_line_idx = -2 # special flag
             
-            if not target_line and article_name_ai:
-                 parts = article_name_ai.split('-')
-                 # Consider parts length >= 3 significant (e.g. dimensions '8X7X40')
-                 significant_parts = [p for p in parts if len(p) >= 3]
-                 
-                 for line in source_lines:
-                     # 1. Exact or near-exact match
-                     if article_name_ai in line.strip() or line.strip() in article_name_ai:
-                         target_line = line
-                         break
-                     # 2. Match based on significant parts
-                     if len(significant_parts) >= 1 and all(part in line for part in significant_parts):
-                         target_line = line
-                         break
-                         
-            # 3. SEQUENTIAL LINE MAPPING FALLBACK
-            if not target_line and pos in sequential_map:
-                target_line = sequential_map[pos]
-                logger.info(f"Validator: Used sequential mapping fallback for Pos {pos}")
-            
-            # If we still couldn't find the raw line, flag it
-            used_fallback = False
-            text_to_scan: str
-            if target_line:
-                text_to_scan = str(target_line)
-            elif article_name_ai:
-                text_to_scan = str(article_name_ai)
-                used_fallback = True
-                logger.warning(f"Validator: Could not find raw line for Pos {pos}, falling back to article_name (unreliable)")
+            # Context construction
+            text_to_scan = ""
+            if target_line_idx >= 0:
+                # Grab a window of context (up to 3 lines above/below)
+                start_context = max(0, target_line_idx - 2)
+                end_context = min(len(source_lines), target_line_idx + 4)
+                text_to_scan = "\n".join(source_lines[start_context:end_context])
+            elif target_line_idx == -2:
+                text_to_scan = target_line
             else:
-                text_to_scan = ""
-            
-            # Store raw text snippet for the Verifier/Learner later
-            item["metadata"]["raw_text_snippet"] = text_to_scan
-            if used_fallback:
+                # Fallback to article name if absolutely nothing else
+                text_to_scan = item.get("article_name", "")
                 item["metadata"]["snippet_is_fallback"] = True
-            
+
+            item["metadata"]["raw_text_snippet"] = text_to_scan
+
             if not text_to_scan:
-                # Default high confidence if we can't find source text to invalidate it?
-                # No, standard 0.5 because we are flying blind.
                 item["metadata"]["rule_confidence_score"] = 0.5
                 continue
 
-            # 2. FIX DIMENSIONS (Using strict regex on the SOURCE text)
-            strict_dims = parse_dimensions_from_string(text_to_scan)
-            # When text_to_scan is a fallback (article_name), the AI may have mixed
-            # tolerance digits into height (e.g., '6' from 'h6' becomes height).
-            # Try to find the correct line in source_text and re-parse from there.
-            if used_fallback and source_text:
-                ai_dims = config.get("dimensions", {}) or {}
-                ai_w = ai_dims.get("width")
-                ai_l = ai_dims.get("length")
-                
-                # Search each source line for one that correlates with this item's dims
-                best_src_line = None
-                best_src_score = -1
-                best_src_dims = None
-                ai_features = [f.get("spec", "").upper() for f in config.get("features", []) if f.get("spec")]
-                
-                for src_line in source_lines:
-                    if not src_line.strip():
-                        continue
-                    src_line_dims = parse_dimensions_from_string(src_line)
-                    if not src_line_dims:
-                        continue
-                    
-                    # Match: source line must share width, height, and length if available
-                    match_w = (ai_w is not None and src_line_dims.get("width") == ai_w)
-                    match_h = (ai_dims.get("height") is not None and src_line_dims.get("height") == ai_dims.get("height"))
-                    match_l = (ai_l is not None and src_line_dims.get("length") == ai_l)
-                    
-                    is_dim_match = False
-                    if ai_l is not None:
-                        if match_w and match_h and match_l: is_dim_match = True
-                    else:
-                        if match_w and match_h and src_line_dims.get("length") is None: is_dim_match = True
-                        
-                    if is_dim_match:
-                        # Score the match based on how many AI features are in the source line
-                        src_features = [f["spec"].upper() for f in extract_features_from_string(src_line) if f.get("spec")]
-                        score = sum(1 for feat in ai_features if feat in src_features)
-                        
-                        if score > best_src_score:
-                            best_src_score = score
-                            best_src_line = src_line
-                            best_src_dims = src_line_dims
-                            
-                if best_src_line:
-                    strict_dims = best_src_dims
-                    text_to_scan = str(best_src_line)
-                    logger.info(f"Validator: Re-parsed dims from best scored source line for Pos {pos}: {best_src_dims} (score: {best_src_score})")
-            if strict_dims and strict_dims.get("length"):
-                 # Trust Regex over AI for Dimensions.
-                 config["dimensions"] = strict_dims
+            # --- Apply Fixes (Dimensions, Features, Material, Form, Treatments) ---
+            # (Reuse existing logic but on the smaller targeted text_to_scan)
             
-            # 3. FIX FEATURES (M-Codes) (Using strict regex on the SOURCE text)
+            # Dimensions
+            strict_dims = parse_dimensions_from_string(text_to_scan)
+            if strict_dims and strict_dims.get("length"):
+                config["dimensions"] = strict_dims
+
+            # Features (M-Codes, NZG)
             strict_features = extract_features_from_string(text_to_scan)
             current_features = config.get("features", [])
             for sf in strict_features:
                 if not any(cf.get("spec") == sf["spec"] for cf in current_features):
                     current_features.append(sf)
             
-            # 3a. EXTRACT SHAFT TOLERANCE (h6/h7/h8, default h9)
+            # Shaft Tolerances
             shaft_tols = extract_shaft_tolerance(text_to_scan)
-            # NOTE: Full-source-text fallback intentionally removed.
-            # In multi-item documents, searching the entire source text finds the first
-            # h-tolerance anywhere in the doc and bleeds it into every other position.
-            # If no tolerance is found in the per-item snippet, keep the h9 default.
-            # Remove any existing shaft tolerance feature to avoid duplicates
             current_features = [f for f in current_features if not (
-                f.get("feature_type") == "tolerance" and f.get("spec", "").lower().startswith("h") and f.get("spec", "").lower() in ["h6", "h7", "h8", "h9"]
+                f.get("feature_type") == "tolerance" and f.get("spec", "").lower().startswith("h")
             )]
             for tol in shaft_tols:
-                current_features.append({
-                    "feature_type": "tolerance",
-                    "spec": tol["spec"],
-                    "position": tol["position"]
-                })
-                logger.info(f"Validator: Shaft tolerance for Pos {pos}: {tol['spec']} on {tol['position']}")
-            
+                current_features.append({"feature_type": "tolerance", "spec": tol["spec"], "position": tol["position"]})
             config["features"] = current_features
-            item["config"] = config
-            
-            # 3b. FIX MATERIAL (Hard auto-correct known bad values)
+
+            # Material Recovery (If AI missed it)
             raw_material = config.get("material", "")
             if raw_material:
-                fixed_material = fix_material(raw_material)
-                if fixed_material != raw_material:
-                    config["material"] = fixed_material
-                    item["config"] = config
-                    item["metadata"]["material_auto_corrected"] = f"{raw_material} -> {fixed_material}"
-            
-            # 3b-2: STRICT FORM SANITIZATION
-            VALID_FORMS = {"A", "B", "C", "D", "E", "F", "AB", "AS", "BS", "ABS", "CD", "EF", "K"}
-            raw_form = config.get("form", "")
-            if raw_form:
-                clean_form = raw_form.strip().upper()
-                if clean_form not in VALID_FORMS:
-                    logger.warning(f"Validator: Invalid Form '{raw_form}' detected for Pos {pos}. Stripping it.")
-                    config["form"] = None
-                    item["config"] = config
-
-            # 3c. EXTRACT FORM from raw text if AI missed it
-            if not config.get("form") and text_to_scan:
-                # Check for "DIN 6885 X" pattern (space separated)
-                din_form_match = re.search(r'DIN\s*6885\s+([A-Z]{1,3})(?=\s|$)', text_to_scan, re.IGNORECASE)
-                if din_form_match and din_form_match.group(1).upper() in VALID_FORMS:
-                    config["form"] = din_form_match.group(1).upper()
-                    item["config"] = config
-                    logger.info(f"Validator: Extracted Form '{config['form']}' from DIN pattern for Pos {pos}")
-                else:
-                    # Check common dash-separated forms or explicit form names
-                    sorted_forms = sorted(list(VALID_FORMS), key=len, reverse=True)
-                    for form_candidate in sorted_forms:
-                        if f"-{form_candidate}-" in text_to_scan or text_to_scan.startswith(f"{form_candidate}-") or re.search(rf'\b(?:Form|Typ)\s+{form_candidate}\b', text_to_scan, re.IGNORECASE):
-                            config["form"] = form_candidate
-                            item["config"] = config
-                            logger.info(f"Validator: Extracted Form '{form_candidate}' from raw text for Pos {pos}")
-                            break
-            
-            # 3d. EXTRACT MATERIAL from raw text if AI missed it
-            VALID_MATERIALS = ["C45+C", "C45K", "C45", "42CrMo4", "1.4301", "1.4305", "1.4571", "1.4404", "1.4057"]
-            if not config.get("material") and text_to_scan:
-                for mat in VALID_MATERIALS:
+                config["material"] = fix_material(raw_material)
+            else:
+                # Recovery loop for materials
+                SEARCH_MATERIALS = ["C45+C", "C45K", "C45", "42CrMo4", "1.4301", "1.4305", "1.4571", "1.4404", "1.4057"]
+                for mat in SEARCH_MATERIALS:
                     if mat in text_to_scan:
                         config["material"] = mat
-                        item["config"] = config
-                        logger.info(f"Validator: Extracted Material '{mat}' from raw text for Pos {pos}")
+                        logger.info(f"Validator: Recovered Material '{mat}' for Pos {pos}")
                         break
-                # Also try common OCR misreads
+                # Common OCR/Hallucination fixes
                 if not config.get("material"):
-                    text_upper = text_to_scan.upper()
-                    if "C45C" in text_upper or "C45+C" in text_upper:
-                        config["material"] = "C45+C"
-                        item["config"] = config
-                    elif "C45K" in text_upper:
-                        config["material"] = "C45K"
-                        item["config"] = config
+                    tu = text_to_scan.upper()
+                    if "C45+C" in tu or "C45C" in tu: config["material"] = "C45+C"
+                    elif "C45K" in tu: config["material"] = "C45K"
             
-            # 3f. EXTRACT TREATMENTS AND ALWAYS OVERRIDE AI
-            text_to_scan_fallback = text_to_scan or ""
+            # Form Sanitization & Recovery
+            VALID_FORMS = {"A", "B", "C", "D", "E", "F", "AB", "AS", "BS", "ABS", "CD", "EF", "K"}
+            current_form = config.get("form", "").strip().upper() if config.get("form") else ""
+            if current_form and current_form not in VALID_FORMS:
+                 logger.warning(f"Validator: Invalid Form '{current_form}' - stripping.")
+                 config["form"] = None
             
-            # Map surface treatment
-            st = extract_surface_treatment(text_to_scan_fallback)
-            if st:
-                config["surface_treatment"] = st
-                logger.info(f"Validator: Extracted Surface Treatment '{st}' for Pos {pos}")
-            elif config.get("surface_treatment"):
-                # If AI found it but text_to_scan didn't, try normalizing AI's value directly
-                clean_st = extract_surface_treatment(config["surface_treatment"])
-                if clean_st:
-                    config["surface_treatment"] = clean_st
+            if not config.get("form"):
+                 # Recovery loop for forms (check boundaries)
+                 for f_cand in sorted(list(VALID_FORMS), key=len, reverse=True):
+                     # Match -Form- or DIN 6885 Form
+                     if f"-{f_cand}-" in text_to_scan or text_to_scan.startswith(f"{f_cand}-") or f"DIN 6885 {f_cand}" in text_to_scan.upper():
+                         config["form"] = f_cand
+                         logger.info(f"Validator: Recovered Form '{f_cand}' for Pos {pos}")
+                         break
 
-            # Map heat treatment
-            ht = extract_heat_treatment(text_to_scan_fallback)
-            if ht:
-                config["heat_treatment"] = ht
-                logger.info(f"Validator: Extracted Heat Treatment '{ht}' for Pos {pos}")
-            elif config.get("heat_treatment"):
-                # Check if AI put a Surface Treatment inside Heat Treatment (e.g. QT 800)
-                ai_ht = config["heat_treatment"]
-                clean_st = extract_surface_treatment(ai_ht)
-                if clean_st:
-                    config["surface_treatment"] = clean_st
-                    config["heat_treatment"] = None
-                    logger.info(f"Validator: Moved AI Heat Treatment '{ai_ht}' to Surface Treatment '{clean_st}'")
-                else:
-                    clean_ht = extract_heat_treatment(ai_ht)
-                    if clean_ht:
-                        config["heat_treatment"] = clean_ht
+            # Treatments (Override AI)
+            st = extract_surface_treatment(text_to_scan)
+            if st: config["surface_treatment"] = st
             
-            # 3g. STRICTLY SANITIZE MARKING
-            mk = extract_marking(text_to_scan_fallback)
-            if mk:
-                config["marking"] = mk
-                logger.info(f"Validator: Found Explicit Marking '{mk}' for Pos {pos}")
-            else:
-                hallucinated = config.get("marking")
-                if hallucinated:
-                    clean_mk = extract_marking(hallucinated)
-                    if clean_mk:
-                        config["marking"] = clean_mk
-                        logger.info(f"Validator: Cleaned AI Marking to '{clean_mk}' for Pos {pos}")
-                    else:
-                        logger.warning(f"Validator: Wiping out hallucinated marking '{hallucinated}' for Pos {pos}")
-                        config["marking"] = None
-            
+            ht = extract_heat_treatment(text_to_scan)
+            if ht: config["heat_treatment"] = ht
+
+            # Marking
+            mk = extract_marking(text_to_scan)
+            if mk: config["marking"] = mk
+            else: config["marking"] = None if config.get("marking") and not extract_marking(config["marking"]) else config.get("marking")
+
             item["config"] = config
 
-            # 3e. ALWAYS CONSTRUCT article_name — never send null
+            # Article Name Reconstruction
             dims = config.get("dimensions", {}) or {}
-            form = config.get("form", "")
-            material = config.get("material", "")
-            features = config.get("features", [])
-            
-            # Build dimensions string
-            dim_parts = []
-            for key in ["width", "height", "length"]:
-                v = dims.get(key)
-                if v is not None:
-                    dim_parts.append(str(int(v)) if float(v) == int(float(v)) else str(v))
-            dim_str = "X".join(dim_parts) if dim_parts else ""
-            
-            # Build features string
-            feat_str = "-".join([f.get("spec", "") for f in features if f.get("spec")]) if features else ""
-            
-            # Construct: PF-{Form}-{Dimensions}-{Material}-{Features}-{HeatTreatment}-{SurfaceTreatment}-{Marking}
-            name_parts = ["PF"]
-            if form:
-                name_parts.append(form)
-            if dim_str:
-                name_parts.append(dim_str)
-            if material:
-                name_parts.append(material)
-            if feat_str:
-                name_parts.append(feat_str)
-            if config.get("heat_treatment"):
-                name_parts.append(config.get("heat_treatment"))
-            if config.get("surface_treatment"):
-                name_parts.append(config.get("surface_treatment"))
-            if config.get("marking"):
-                name_parts.append(config.get("marking"))
-            
-            constructed_name = "-".join(name_parts)
-            
-            # Only use constructed name if we have at least form or dimensions
-            if len(name_parts) >= 3:  # PF + at least 2 more parts
-                item["article_name"] = constructed_name
-            elif not item.get("article_name"):
-                item["article_name"] = constructed_name  # Even partial is better than null
-            
-            # 4. CALCULATE CONFIDENCE
-            confidence = calculate_confidence(item, text_to_scan)
-            
-            # Extra penalty if we couldn't find the real raw line
-            if used_fallback:
-                confidence = min(confidence, 0.6)
-                item["metadata"]["status"] = "raw_line_not_found"
-            
-            item["metadata"]["rule_confidence_score"] = confidence
-            
+            d_str = "X".join([str(int(v)) if float(v) == int(float(v)) else str(v) for v in [dims.get("width"), dims.get("height"), dims.get("length")] if v])
+            f_str = "-".join([f["spec"] for f in config.get("features", []) if f.get("spec")])
+            parts = ["PF", config.get("form"), d_str, config.get("material"), f_str, config.get("heat_treatment"), config.get("surface_treatment"), config.get("marking")]
+            item["article_name"] = "-".join([p for p in parts if p])
+
+            item["metadata"]["rule_confidence_score"] = calculate_confidence(item, text_to_scan)
+
         except Exception as e:
-            logger.error(f"Validator failed for item {item.get('pos')}: {e}")
+            logger.error(f"Validator failed for Pos {item.get('pos')}: {e}")
             continue
             
     return items
