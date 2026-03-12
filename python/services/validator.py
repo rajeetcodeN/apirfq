@@ -255,15 +255,17 @@ def extract_features_from_string(text: str) -> List[Dict[str, str]]:
     return features
 
 
-def extract_shaft_tolerance(text: str) -> Dict[str, str]:
+def extract_shaft_tolerance(text: str) -> List[Dict[str, str]]:
     """
-    Extracts shaft tolerance (h6, h7, h8). Any other h-tolerance (like h11)
+    Extracts ALL shaft tolerances (h6, h7, h8). Any other h-tolerance (like h11)
     is mapping down to h9 implicitly. Determines which dimension it applies to.
-    Handles both suffix (8h6x7x30) and prefix (h68x7x30, 8xh68x30) formats.
+    Handles both suffix (8h6x7x30) and prefix (h68x7x30, 8xh68x30) formats as well
+    as double tolerances (8h8x7h8x30).
     
-    Returns: {"spec": "h6", "position": "width"}
+    Returns: [{"spec": "h6", "position": "width"}, ...]
     """
     VALID_TOLERANCES = ["h6", "h7", "h8"]
+    found_tolerances = []
     
     def normalize_spec(spec: str) -> str:
         """Map h11, h10, h9 etc. to h9 if it's not strictly h6/h7/h8"""
@@ -271,47 +273,39 @@ def extract_shaft_tolerance(text: str) -> Dict[str, str]:
             return spec
         return "h9"
     
-    # --- SUFFIX patterns (tolerance AFTER the digit) ---
+    # Split the dimensions by 'x' or 'X'
+    parts = re.split(r'[xX]', text)
     
-    # Suffix on HEIGHT: 8×7h7×30 (h7 after height digit)
-    match = re.search(r'\d+(?:[.,]\d+)?\s*[xX]\s*\d+(?:[.,]\d+)?(h\d+)\s*[xX]\s*\d+', text, re.IGNORECASE)
-    if match:
-        spec = normalize_spec(match.group(1).lower())
-        logger.info(f"Shaft tolerance '{spec}' detected (suffix on HEIGHT)")
-        return {"spec": spec, "position": "height"}
-    
-    # Suffix on WIDTH: 8h6×7×30 (h6 after width digit, NOT preceded by xX)
-    match = re.search(r'(?<![xX])\d+(?:[.,]\d+)?(h\d+)\s*[xX]\s*\d+', text, re.IGNORECASE)
-    if match:
-        spec = normalize_spec(match.group(1).lower())
-        logger.info(f"Shaft tolerance '{spec}' detected (suffix on WIDTH)")
-        return {"spec": spec, "position": "width"}
-    
-    # --- PREFIX patterns (tolerance BEFORE the digit) ---
-    
-    # Prefix on HEIGHT: 8xh68x30 (h6 before height digit, after x)
-    match = re.search(r'\d+\s*[xX]\s*(h\d+)\s*\d+\s*[xX]\s*\d+', text, re.IGNORECASE)
-    if match:
-        spec = normalize_spec(match.group(1).lower())
-        logger.info(f"Shaft tolerance '{spec}' detected (prefix on HEIGHT)")
-        return {"spec": spec, "position": "height"}
-    
-    # Prefix on WIDTH: h68x7x30 (h6 before width digit, at start)
-    match = re.search(r'(?:^|[\s\-])(h\d+)\s*\d+\s*[xX]\s*\d+\s*[xX]\s*\d+', text, re.IGNORECASE)
-    if match:
-        spec = normalize_spec(match.group(1).lower())
-        logger.info(f"Shaft tolerance '{spec}' detected (prefix on WIDTH)")
-        return {"spec": spec, "position": "width"}
-    
-    # --- STANDALONE (tolerance separated by space/letter, not glued to any digit) ---
-    match = re.search(r'(?:^|[^\d])(h\d+)(?:[^0-9xX]|$)', text, re.IGNORECASE)
-    if match:
-        spec = normalize_spec(match.group(1).lower())
-        logger.info(f"Shaft tolerance '{spec}' detected (standalone → defaults to WIDTH)")
-        return {"spec": spec, "position": "width"}
-    
-    # Default: h9 on width
-    return {"spec": "h9", "position": "width"}
+    if len(parts) >= 1:
+        # First chunk is the Width section (e.g. "8h8" or "h88" or "8")
+        width_part = parts[0]
+        match_w = re.search(r'(h\d+)', width_part, re.IGNORECASE)
+        if match_w:
+            spec = normalize_spec(match_w.group(1).lower())
+            found_tolerances.append({"spec": spec, "position": "width"})
+            logger.info(f"Shaft tolerance '{spec}' detected on WIDTH")
+            
+    if len(parts) >= 2:
+        # Second chunk is the Height section (e.g. "7h8" or "h87" or "7")
+        height_part = parts[1]
+        match_h = re.search(r'(h\d+)', height_part, re.IGNORECASE)
+        if match_h:
+            spec = normalize_spec(match_h.group(1).lower())
+            found_tolerances.append({"spec": spec, "position": "height"})
+            logger.info(f"Shaft tolerance '{spec}' detected on HEIGHT")
+            
+    # Check for standalone tolerance ONLY if we found nothing in the chunks
+    if not found_tolerances:
+        match_standalone = re.search(r'(?:^|[^\d])(h\d+)(?:[^0-9xX]|$)', text, re.IGNORECASE)
+        if match_standalone:
+            spec = normalize_spec(match_standalone.group(1).lower())
+            logger.info(f"Shaft tolerance '{spec}' detected (standalone → defaults to WIDTH)")
+            found_tolerances.append({"spec": spec, "position": "width"})
+        else:
+            # Default: h9 on width
+            found_tolerances.append({"spec": "h9", "position": "width"})
+            
+    return found_tolerances
 
 
 def extract_heat_treatment(text: str) -> Optional[str]:
@@ -454,6 +448,10 @@ def calculate_confidence(item: Dict[str, Any], raw_text_snippet: str) -> float:
 
     # 3. Check for weird Form codes (single letters that might be dimension labels)
     form = config.get("form", "")
+    if form and form.upper() not in {"A", "B", "C", "D", "E", "F", "AB", "AS", "BS", "ABS", "CD", "EF", "K"}:
+        penalties.append(0.3)
+        issues.append(f"Invalid Form extracted: {form}")
+
     if form and len(form) == 1 and f"{form}=" in snippet.replace(" ", ""):
         penalties.append(0.4)
         issues.append(f"Form '{form}' matches dimension label pattern")
@@ -692,7 +690,7 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                     current_features.append(sf)
             
             # 3a. EXTRACT SHAFT TOLERANCE (h6/h7/h8, default h9)
-            shaft_tol = extract_shaft_tolerance(text_to_scan)
+            shaft_tols = extract_shaft_tolerance(text_to_scan)
             # NOTE: Full-source-text fallback intentionally removed.
             # In multi-item documents, searching the entire source text finds the first
             # h-tolerance anywhere in the doc and bleeds it into every other position.
@@ -701,12 +699,13 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             current_features = [f for f in current_features if not (
                 f.get("feature_type") == "tolerance" and f.get("spec", "").lower().startswith("h") and f.get("spec", "").lower() in ["h6", "h7", "h8", "h9"]
             )]
-            current_features.append({
-                "feature_type": "tolerance",
-                "spec": shaft_tol["spec"],
-                "position": shaft_tol["position"]
-            })
-            logger.info(f"Validator: Shaft tolerance for Pos {pos}: {shaft_tol['spec']} on {shaft_tol['position']}")
+            for tol in shaft_tols:
+                current_features.append({
+                    "feature_type": "tolerance",
+                    "spec": tol["spec"],
+                    "position": tol["position"]
+                })
+                logger.info(f"Validator: Shaft tolerance for Pos {pos}: {tol['spec']} on {tol['position']}")
             
             config["features"] = current_features
             item["config"] = config
@@ -720,18 +719,29 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                     item["config"] = config
                     item["metadata"]["material_auto_corrected"] = f"{raw_material} -> {fixed_material}"
             
+            # 3b-2: STRICT FORM SANITIZATION
+            VALID_FORMS = {"A", "B", "C", "D", "E", "F", "AB", "AS", "BS", "ABS", "CD", "EF", "K"}
+            raw_form = config.get("form", "")
+            if raw_form:
+                clean_form = raw_form.strip().upper()
+                if clean_form not in VALID_FORMS:
+                    logger.warning(f"Validator: Invalid Form '{raw_form}' detected for Pos {pos}. Stripping it.")
+                    config["form"] = None
+                    item["config"] = config
+
             # 3c. EXTRACT FORM from raw text if AI missed it
             if not config.get("form") and text_to_scan:
                 # Check for "DIN 6885 X" pattern (space separated)
-                din_form_match = re.search(r'DIN\s*6885\s+([A-Z]{1,2})(?=\s|$)', text_to_scan, re.IGNORECASE)
-                if din_form_match:
+                din_form_match = re.search(r'DIN\s*6885\s+([A-Z]{1,3})(?=\s|$)', text_to_scan, re.IGNORECASE)
+                if din_form_match and din_form_match.group(1).upper() in VALID_FORMS:
                     config["form"] = din_form_match.group(1).upper()
                     item["config"] = config
                     logger.info(f"Validator: Extracted Form '{config['form']}' from DIN pattern for Pos {pos}")
                 else:
-                    # Check common dash-separated forms
-                    for form_candidate in ["AS", "AB", "A", "B", "C", "E", "D", "K"]:
-                        if f"-{form_candidate}-" in text_to_scan or text_to_scan.startswith(f"{form_candidate}-"):
+                    # Check common dash-separated forms or explicit form names
+                    sorted_forms = sorted(list(VALID_FORMS), key=len, reverse=True)
+                    for form_candidate in sorted_forms:
+                        if f"-{form_candidate}-" in text_to_scan or text_to_scan.startswith(f"{form_candidate}-") or re.search(rf'\b(?:Form|Typ)\s+{form_candidate}\b', text_to_scan, re.IGNORECASE):
                             config["form"] = form_candidate
                             item["config"] = config
                             logger.info(f"Validator: Extracted Form '{form_candidate}' from raw text for Pos {pos}")

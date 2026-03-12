@@ -3,7 +3,8 @@ import json
 import logging
 import asyncio
 import requests
-from typing import Dict, Any, Optional
+import re
+from typing import Dict, Any, Optional, List
 from services.validator import validate_and_fix_items
 from services.correction_service import CorrectionService
 from services.verifier import Verifier
@@ -29,7 +30,10 @@ pos: Position number. **IMPORTANT**: Maintain the original numbering exactly.
 config: **EXTRACT THIS FIRST**. A nested object containing technical specifications:
     - material_id: The structured material ID if present (Format: 100-xxx-xxx.xx-xx).
     - standard: Standard or DIN (e.g., "DIN 6885").
-    - form: The exact form letter/code (e.g., "A", "B", "C", "AS", "AB", "E", "D", "K").
+    - form: The exact form letter/code.
+      * MUST be one of: "A", "B", "C", "D", "E", "F", "AB", "AS", "BS", "ABS", "CD", "EF", "K".
+      * If the text contains an invalid form (e.g. "FC", "PF"), DO NOT extract it as a form. Return null instead.
+      * Pay attention to multi-letter forms like "ABS", "CD", "EF", "BS".
       * **CRITICAL**: Do NOT confuse dimension labels with the Form. "B=10" means Form is NOT "B".
       * **IMPORTANT**: Extract single letters like "E", "K", "D" if they appear after the standard (e.g. "DIN 6885 E").
     - material: Material grade (extract exactly as written).
@@ -69,6 +73,7 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
         - Shaft tolerances (h6, h7, h8) -> type "tolerance" with "position" field
         - NZG (Nutenzugabe/groove allowance) -> type "coating"
       * **SHAFT TOLERANCE (h6/h7/h8/h9)**: Extract the shaft tolerance and identify WHICH dimension it applies to.
+        - You may find MULTIPLE tolerances in one string (e.g. "8h8x7h8x30" -> h8 on width, h8 on height). Extract BOTH if present.
         There are 5 possible formats:
         1. Suffix on width:  "8h6x7x30"  -> spec=h6, position=width  (h6 AFTER width digit)
         2. Suffix on height: "8x7h7x30"  -> spec=h7, position=height (h7 AFTER height digit)
@@ -147,16 +152,83 @@ You must respond ONLY with valid raw rendered JSON.
 - Only respond with a valid, root-level JSON object.
 - Do NOT skip any line item. Continue extracting all line items until the sum of all line_total values exactly equals the total sale amount extracted from the invoice. This verification ensures that all items are fully extracted and no entries are missed. If the totals do not match, keep parsing and extracting additional line items until they do. Only then stop."""
 
+# --- Batch Processing Helpers ---
+
+def identify_item_positions(text: str) -> List[int]:
+    """
+    Scans text for line item 'anchors' (Pos 1, 1., 0010, etc.)
+    Returns a list of character indices where each item likely starts.
+    """
+    # Patterns likely to indicate a new position:
+    # 1. "Pos 1" or "Pos. 1" or "Position 1"
+    # 2. Start of line "1." or "01." or "001."
+    # 3. "1 " at the beginning of a line (risky, but common in simple txt)
+    
+    anchors = []
+    
+    # regexes = [
+    #     r'(?i)(?:^|[\n])\s*(?:Pos\.?|Position)?\s*(\d+)\s*[\.\s]', # Pos 1 or 1.
+    #     r'(?i)(?:^|[\n])\s*(\d{3,4})\s+', # 0010 style
+    # ]
+    
+    # For now, let's use a robust sequential anchor search
+    lines = text.split('\n')
+    current_idx = 0
+    
+    for line in lines:
+        # A line starting with digit + dot or Pos + digit
+        if re.match(r'^\s*(?:Pos\.?|Position)?\s*\d+[\.\s]', line, re.IGNORECASE) or re.match(r'^\s*\d{2,4}\s+', line):
+            anchors.append(current_idx)
+        current_idx += len(line) + 1 # +1 for newline
+        
+    # Deduplicate: if multiple anchors are within 20 chars, keep only the first
+    if not anchors: return []
+    
+    clean_anchors = [anchors[0]]
+    for a in anchors[1:]:
+        if a - clean_anchors[-1] > 15: # Minimum 15 chars per item assumption
+            clean_anchors.append(a)
+            
+    return clean_anchors
+
+def chunk_text_by_anchors(text: str, items_per_chunk: int = 25) -> List[str]:
+    """
+    Splits text into chunks, each containing approximately items_per_chunk.
+    """
+    anchors = identify_item_positions(text)
+    
+    if not anchors or len(anchors) <= items_per_chunk:
+        return [text]
+        
+    chunks = []
+    for i in range(0, len(anchors), items_per_chunk):
+        start_idx = anchors[i]
+        # End index is the start of the next chunk's first anchor, or end of string
+        if i + items_per_chunk < len(anchors):
+            end_idx = anchors[i + items_per_chunk]
+            chunks.append(text[start_idx:end_idx])
+        else:
+            chunks.append(text[start_idx:])
+            
+    # If the first chunk missed some header text, prepend it
+    if anchors[0] > 0:
+        header_text = text[:anchors[0]]
+        chunks[0] = header_text + chunks[0]
+        
+    logger.info(f"Chunking: Divided text into {len(chunks)} chunks (Total items detected: ~{len(anchors)})")
+    return chunks
+
+
 USER_PROMPT_TEMPLATE = """Extract ALL line items and document information from this RFQ/Purchase Order document:
 
 {TEXT}
 
 Return ONLY valid JSON with no markdown formatting."""
 
-def extract_data_from_text(text: str, native_text: Optional[str] = None, user_feedback: Optional[str] = None) -> Dict[str, Any]:
+def extract_data_from_text(text: str, native_text: Optional[str] = None, user_feedback: Optional[str] = None, is_chunk: bool = False) -> Dict[str, Any]:
     """
     Sends the masked text to Mistral AI for extraction.
-    Native text is user for post-validation (regex overrides).
+    Native text is used for post-validation (regex overrides).
     """
     if not MISTRAL_API_KEY:
         raise ValueError("MISTRAL_API_KEY not set")
@@ -164,7 +236,7 @@ def extract_data_from_text(text: str, native_text: Optional[str] = None, user_fe
     if not text:
         raise ValueError("No text provided for extraction")
         
-    logger.info("Sending request to Mistral AI...")
+    logger.info(f"Sending request to Mistral AI (is_chunk={is_chunk})...")
     
     # 1. Fetch Learned Context (Few-Shot Examples)
     if correction_service:
@@ -184,7 +256,13 @@ def extract_data_from_text(text: str, native_text: Optional[str] = None, user_fe
     #     logger.info("Column headers detected and injected into prompt")
     column_hint = ""  # Force empty for now
         
-    system_prompt_with_context = SYSTEM_PROMPT.replace("{LEARNED_CONTEXT}", learned_context + feedback_instruction + column_hint)
+    # If this is a chunk (not the first chunk), tell AI to skip headers to save time
+    chunk_instruction = ""
+    if is_chunk:
+        chunk_instruction = "\n\n**IMPORTANT**: This is a partial text chunk. Focus ONLY on extracting line items (requested_items). You can return null or empty values for the header/document information fields (supplier_name, rfq_number, etc.) as they are already extracted."
+
+    system_prompt_with_context = SYSTEM_PROMPT.replace("{LEARNED_CONTEXT}", learned_context + feedback_instruction + column_hint + chunk_instruction)
+
     
     headers = {
         "Authorization": f"Bearer {MISTRAL_API_KEY}",
@@ -286,11 +364,65 @@ def extract_data_from_text(text: str, native_text: Optional[str] = None, user_fe
 
 async def extract_data_from_text_async(text: str, native_text: Optional[str] = None, user_feedback: Optional[str] = None) -> Dict[str, Any]:
     """
-    Async wrapper for extraction. Runs the full text as a single AI call.
-    No chunking - full context is always preserved.
+    Async wrapper for extraction. Performs parallel chunking for large documents (70-500 items).
+    Chunks text into batches of 25 items and processes them simultaneously.
     """
     if not text:
         raise ValueError("No text provided")
 
+    # 1. Chunk the text
+    # We use 25 items per chunk as requested by the user for optimal balance
+    chunks = chunk_text_by_anchors(text, items_per_chunk=25)
+    
+    if len(chunks) == 1:
+        # Fallback to standard single call for small files
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, extract_data_from_text, text, native_text, user_feedback)
+
+    logger.info(f"Starting parallel extraction for {len(chunks)} chunks...")
+    
+    # 2. Create parallel tasks
+    # We use a semaphore to limit concurrency (e.g., 5 simultaneous requests MAX)
+    # to avoid hitting Mistral API rate limits (TPM/RPM)
+    semaphore = asyncio.Semaphore(5)
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, extract_data_from_text, text, native_text, user_feedback)
+
+    async def process_chunk(chunk_text: str, index: int):
+        async with semaphore:
+            # First chunk is NOT marked as 'is_chunk' because we want it to extract the header fields
+            is_chunk_flag = (index > 0)
+            return await loop.run_in_executor(None, extract_data_from_text, chunk_text, native_text, user_feedback, is_chunk_flag)
+
+    tasks = [process_chunk(chunk, i) for i, chunk in enumerate(chunks)]
+    
+    # 3. Gather results
+    results = await asyncio.gather(*tasks)
+    
+    # 4. Merge results
+    if not results:
+        raise ValueError("Parallel extraction returned no results")
+        
+    # The first result contains our master header/metadata
+    master_result = results[0]
+    all_items = []
+    
+    for i, res in enumerate(results):
+        items = res.get("requested_items", [])
+        if items:
+            all_items.extend(items)
+            
+    # Re-sequence 'pos' to ensure it's 1, 2, 3... in case AI reset it per chunk
+    for idx, item in enumerate(all_items):
+        item["pos"] = idx + 1
+        
+    master_result["requested_items"] = all_items
+    
+    # Add batch metadata
+    if "metadata" not in master_result: master_result["metadata"] = {}
+    master_result["metadata"]["batch_count"] = len(chunks)
+    master_result["metadata"]["total_items_extracted"] = len(all_items)
+    master_result["metadata"]["processing_mode"] = "parallel_burst"
+    
+    logger.info(f"Parallel extraction complete. Merged {len(all_items)} items from {len(chunks)} chunks.")
+    return master_result
+
