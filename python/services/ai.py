@@ -376,8 +376,9 @@ async def extract_data_from_text_async(text: str, native_text: Optional[str] = N
         raise ValueError("No text provided")
 
     # 1. Chunk the text
-    # We use 25 items per chunk to reduce parallel overhead while keeping responses fast
-    chunks = chunk_text_by_anchors(text, items_per_chunk=25)
+    # We use 10 items per chunk to ensure each request finishes well within the 4min timeout
+    # and to maximize parallel throughput with our concurrency limit of 5.
+    chunks = chunk_text_by_anchors(text, items_per_chunk=10)
     
     if len(chunks) == 1:
         # Fallback to standard single call for small files
