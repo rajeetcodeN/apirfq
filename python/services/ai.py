@@ -284,15 +284,37 @@ def extract_data_from_text(text: str, native_text: Optional[str] = None, user_fe
         "response_format": {"type": "json_object"}
     }
     
-    try:
-        response = requests.post(
-            f"{MISTRAL_API_BASE}/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=240  # 4 minute timeout for very large files (>200s requested)
-        )
-        
-        response.raise_for_status()
+    max_retries = 3
+    retry_delay = 2
+    
+    for attempt in range(max_retries + 1):
+        try:
+            response = requests.post(
+                f"{MISTRAL_API_BASE}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=240  # 4 minute timeout for very large files (>200s requested)
+            )
+            
+            if response.status_code == 429:
+                if attempt < max_retries:
+                    wait_time = retry_delay * (2 ** attempt)
+                    logger.warning(f"Mistral AI Rate Limit (429) hit. Retrying in {wait_time}s (Attempt {attempt+1}/{max_retries})...")
+                    import time
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error("Mistral AI Rate Limit (429) persistent after multiple retries.")
+                    response.raise_for_status()
+            
+            response.raise_for_status()
+            break # Success
+        except requests.exceptions.RequestException as re:
+            if attempt == max_retries:
+                raise re
+            logger.warning(f"Mistral API request failed: {re}. Retrying...")
+            import time
+            time.sleep(2)
         
         result = response.json()
         content = result['choices'][0]['message']['content']
@@ -387,14 +409,19 @@ async def extract_data_from_text_async(text: str, native_text: Optional[str] = N
 
     logger.info(f"Starting parallel extraction for {len(chunks)} chunks...")
     
-    # 2. Create parallel tasks
-    # We use a semaphore to limit concurrency (e.g., 5 simultaneous requests MAX)
+    # We use a semaphore to limit concurrency (e.g., 4 simultaneous requests MAX)
     # to avoid hitting Mistral API rate limits (TPM/RPM)
-    semaphore = asyncio.Semaphore(5)
+    semaphore = asyncio.Semaphore(4)
     loop = asyncio.get_event_loop()
 
     async def process_chunk(chunk_text: str, index: int):
         async with semaphore:
+            # Stagger the start of each chunk to avoid a burst of 5 requests at once
+            if index > 0:
+                wait_time = index * 1.5 # 1.5s delay between chunk starts
+                logger.info(f"Staggering chunk {index+1}: Waiting {wait_time}s before start...")
+                await asyncio.sleep(wait_time)
+                
             # First chunk is NOT marked as 'is_chunk' because we want it to extract the header fields
             is_chunk_flag = (index > 0)
             return await loop.run_in_executor(None, extract_data_from_text, chunk_text, native_text, user_feedback, is_chunk_flag)
