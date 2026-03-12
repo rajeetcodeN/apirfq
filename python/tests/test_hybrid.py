@@ -14,12 +14,15 @@ load_dotenv(dotenv_path="../.env.local")
 from services.ingestion import route_ingestion
 from services.ai import extract_data_from_text
 
+import pytest
+
+@pytest.mark.asyncio
 async def test_extraction():
     pdf_path = "../würth.pdf"
     print(f"Testing extraction for: {pdf_path}")
     
     if not os.path.exists(pdf_path):
-        print(f"Error: File {pdf_path} not found.")
+        pytest.skip(f"File {pdf_path} not found. Skipping integration test.")
         return
 
     with open(pdf_path, "rb") as f:

@@ -1,3 +1,4 @@
+import pytest
 import json
 import os
 import requests
@@ -24,7 +25,14 @@ USER_PROMPT_TEMPLATE = """Extract ALL line items and document information from t
 
 Return ONLY valid JSON with no markdown formatting."""
 
+@pytest.mark.parametrize("text, label", [
+    ("PFC 8h7x6x12 Edelstahl 500 stk\nPFC 8h7x7x12 Edelstahl 500 stk", "Without Leading Newline"),
+    ("\n\nPFC 8h7x6x12 Edelstahl 500 stk\nPFC 8h7x7x12 Edelstahl 500 stk", "With Leading Newline")
+])
 def test_mistral(text, label):
+    if not MISTRAL_API_KEY:
+        pytest.skip("No MISTRAL_API_KEY found")
+
     print(f"\n--- Testing: {label} ---")
     headers = {
         "Authorization": f"Bearer {MISTRAL_API_KEY}",
@@ -49,7 +57,9 @@ text_without_newline = "PFC 8h7x6x12 Edelstahl 500 stk\nPFC 8h7x7x12 Edelstahl 5
 text_with_newline = "\n\nPFC 8h7x6x12 Edelstahl 500 stk\nPFC 8h7x7x12 Edelstahl 500 stk"
 
 if MISTRAL_API_KEY:
-    test_mistral(text_without_newline, "Without Leading Newline")
-    test_mistral(text_with_newline, "With Leading Newline")
+    # test_mistral(text_without_newline, "Without Leading Newline")
+    # test_mistral(text_with_newline, "With Leading Newline")
+    pass
 else:
     print("No API key")
+

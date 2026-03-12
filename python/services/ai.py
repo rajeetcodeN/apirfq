@@ -176,8 +176,13 @@ def identify_item_positions(text: str) -> List[int]:
     current_idx = 0
     
     for line in lines:
-        # A line starting with digit + dot or Pos + digit
-        if re.match(r'^\s*(?:Pos\.?|Position)?\s*\d+[\.\s]', line, re.IGNORECASE) or re.match(r'^\s*\d{2,4}\s+', line):
+        # 1. Position based: "Pos 1", "1.", "0010"
+        pos_match = re.match(r'^\s*(?:Pos\.?|Position)?\s*\d+[\.\s]', line, re.IGNORECASE) or re.match(r'^\s*\d{2,4}\s+', line)
+        
+        # 2. Article based: "-PF", "PF", "Passfeder", "Parallel key"
+        article_match = re.match(r'^\s*[\-\*•]?\s*(?:PF|Passfeder|Paßfeder|Parallel\s*key|Fitting\s*key)', line, re.IGNORECASE)
+        
+        if pos_match or article_match:
             anchors.append(current_idx)
         current_idx += len(line) + 1 # +1 for newline
         
@@ -371,8 +376,8 @@ async def extract_data_from_text_async(text: str, native_text: Optional[str] = N
         raise ValueError("No text provided")
 
     # 1. Chunk the text
-    # We use 25 items per chunk as requested by the user for optimal balance
-    chunks = chunk_text_by_anchors(text, items_per_chunk=25)
+    # We use 15 items per chunk for optimal speed and to prevent timeouts on complex docs
+    chunks = chunk_text_by_anchors(text, items_per_chunk=15)
     
     if len(chunks) == 1:
         # Fallback to standard single call for small files
