@@ -281,69 +281,70 @@ def extract_data_from_text(text: str, native_text: Optional[str] = None, user_fe
             {"role": "user", "content": USER_PROMPT_TEMPLATE.replace("{TEXT}", text)}
         ],
         "temperature": 0.1,
-        "response_format": {"type": "json_object"}
+    "response_format": {"type": "json_object"}
     }
-    
-    max_retries = 3
-    retry_delay = 2
-    
-    for attempt in range(max_retries + 1):
-        try:
-            response = requests.post(
-                f"{MISTRAL_API_BASE}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=240  # 4 minute timeout for very large files (>200s requested)
-            )
-            
-            if response.status_code == 429:
-                if attempt < max_retries:
-                    wait_time = retry_delay * (2 ** attempt)
-                    logger.warning(f"Mistral AI Rate Limit (429) hit. Retrying in {wait_time}s (Attempt {attempt+1}/{max_retries})...")
-                    import time
-                    time.sleep(wait_time)
-                    continue
-                else:
-                    logger.error("Mistral AI Rate Limit (429) persistent after multiple retries.")
-                    response.raise_for_status()
-            
-            response.raise_for_status()
-            break # Success
-        except requests.exceptions.RequestException as re:
-            if attempt == max_retries:
-                raise re
-            logger.warning(f"Mistral API request failed: {re}. Retrying...")
-            import time
-            time.sleep(2)
-        
+
+    try: # This is the new try block wrapping the entire API call and processing
+        max_retries = 3
+        retry_delay = 2
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = requests.post(
+                    f"{MISTRAL_API_BASE}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=240  # 4 minute timeout for very large files (>200s requested)
+                )
+
+                if response.status_code == 429:
+                    if attempt < max_retries:
+                        wait_time = retry_delay * (2 ** attempt)
+                        logger.warning(f"Mistral AI Rate Limit (429) hit. Retrying in {wait_time}s (Attempt {attempt+1}/{max_retries})...")
+                        import time
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        logger.error("Mistral AI Rate Limit (429) persistent after multiple retries.")
+                        response.raise_for_status()
+
+                response.raise_for_status()
+                break # Success
+            except requests.exceptions.RequestException as re:
+                if attempt == max_retries:
+                    raise re
+                logger.warning(f"Mistral API request failed: {re}. Retrying...")
+                import time
+                time.sleep(2)
+
         result = response.json()
         content = result['choices'][0]['message']['content']
         logger.info(f"DEBUG: AI Response Content (First 500 chars): {content[:500]}...")
-        
+
         if not content:
             raise ValueError("Empty response from AI")
-            
+
         parsed_json = json.loads(content)
-        
+
         # 2. Post-Processing: Validate & Fix using Regex on Native Text
         # This acts as our "Rule-Based Verification Layer"
         if "requested_items" in parsed_json:
             parsed_json["requested_items"] = validate_and_fix_items(
-                parsed_json["requested_items"], 
-                native_text=native_text, 
+                parsed_json["requested_items"],
+                native_text=native_text,
                 ocr_text=text
             )
-            
+
             # 3. AI Verification Layer (The "Double Check")
             # Only checking items with low confidence from the rules layer
             for item in parsed_json["requested_items"]:
                 # Default confidence inside metadata might not exist if validator failed, default to 1.0 (optimistic) to avoid loop
                 metadata = item.get("metadata", {})
                 confidence = metadata.get("rule_confidence_score", 1.0)
-                
+
                 if confidence < 0.9:
                     raw_snippet = metadata.get("raw_text_snippet", "")
-                    
+
                     # SKIP VERIFIER IF SNIPPET IS FALLBACK
                     # If we couldn't find the real raw line, the snippet is just the article name.
                     # The Verifier will 100% flag this as "hallucination" because the dimensions aren't in the snippet.
@@ -356,9 +357,9 @@ def extract_data_from_text(text: str, native_text: Optional[str] = None, user_fe
                         logger.info(f"Low confidence ({confidence:.2f}) for Pos {item.get('pos')}. Triggering Verifier...")
                         try:
                             verification_result = verifier.verify_item(raw_snippet, item)
-                            
+
                             item["metadata"]["verification_result"] = verification_result
-                            
+
                             if not verification_result.get("is_correct", True):
                                 correction = verification_result.get("correction")
                                 if correction:
@@ -368,7 +369,7 @@ def extract_data_from_text(text: str, native_text: Optional[str] = None, user_fe
                                         item["config"].update(correction["config"])
                                     if "article_name" in correction:
                                         item["article_name"] = correction["article_name"]
-                                    
+
                                     item["metadata"]["status"] = "auto_corrected_by_verifier"
                                 else:
                                     item["metadata"]["status"] = "flagged_by_verifier"
@@ -378,7 +379,7 @@ def extract_data_from_text(text: str, native_text: Optional[str] = None, user_fe
                              logger.error(f"Verifier error: {ve}")
 
         return parsed_json
-        
+
     except requests.exceptions.Timeout:
         logger.error("Mistral AI request timed out")
         raise
