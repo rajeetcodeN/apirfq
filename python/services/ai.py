@@ -49,6 +49,7 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
       * **DIN NUMBERS**: Also extract material numbers like 1.4301, 1.4571, 1.7225, 1.0503, etc.
       * **KEYWORDS**: "VA", "V2A", "V4A", "STAINLESS" all refer to stainless steel.
       * **C45 VARIANTS**: Normalize ALL C45 variants (C45, C45K, C45C, C45E, C45R) and the number "1.0503" -> "C45+C".
+      * **SUFFIXES**: If a material has suffixes separated by '+' (e.g. "1.4057+QT800+2H", "1.4301+C700"), extract ONLY the base material (e.g. "1.4057", "1.4301"). Completely DROP the '+' suffixes. They are NOT treatments.
       * **IGNORE**: "P5K", "P85", "P100" (these are packaging/position codes, NOT materials).
     - dimensions: Object with `width`, `height`, `length` (numeric values).
       * **CRITICAL**: Prioritize dimensions found WITHIN the article string (e.g., "20X12X50" -> Length=50).
@@ -87,8 +88,8 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
       * **CONSTRAINT**: Only extract M-codes between M1 and M21.
       * Example: "AS-8h6X7X36-M4-NZG" -> features: [{type:"tolerance",spec:"h6",position:"width"},{type:"thread",spec:"M4"},{type:"coating",spec:"NZG"}]
     - heat_treatment: Extracted heat treatment spec (e.g., "geh.50-55HRC", "verg.90-100", "geh.56-60 0,3-0,5", "N533"). Units like HRC/HV may be omitted.
-    - surface_treatment: Extracted surface treatment spec (e.g., "poliert", "verzinkt", "QT 800", "carb", "carbo.50-54", "nitriert", "salzbadnitriert"). **DO NOT EXTRACT** testing methods (like "Wirb.") or packaging units (like "VP200").
-    - marking: Extracted marking spec. **CRITICAL**: ONLY extract if it starts with "KZ", "gekennz.", "Kennzeich.", "gekennzeichnet", or "marking gek.". DO NOT extract anything else. "NEU", "*NEUTEIL*", "VP100", "QS APZ3.1", "PREN>40", "C700" are NOT markings. If no explicitly labeled marking exists, RETURN NULL. Do not guess.
+    - surface_treatment: Extracted surface treatment spec (e.g., "poliert", "verzinkt", "QT 800", "carb", "carbo.50-54", "nitriert", "salzbadnitriert", "Oberflächenbehandlung", "Oberfläche", "Oberfl."). **DO NOT EXTRACT** testing methods (like "Wirb.") or packaging units (like "VP200").
+    - marking: Extracted marking spec. **CRITICAL**: ONLY extract if it starts with "KZ", "KX", "SS", "HC", "T", "Ken.", "Kennz.", "gekennz.", "Kennzeich.", "gekennzeichnet", or "marking gek.". DO NOT extract anything else. "NEU", "*NEUTEIL*", "VP100", "QS APZ3.1", "PREN>40", "C700" are NOT markings. If no explicitly labeled marking exists, RETURN NULL. Do not guess.
     - weight_per_unit: Weight per single unit if available.
 
 article_name: **CONSTRUCT** this field *AFTER* extracting config. Use this strict format:

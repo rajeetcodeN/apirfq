@@ -32,6 +32,7 @@ MATERIAL_NUMBER_MAP = {
     "C50E": "1.1206",
     "C60E": "1.1221",
     "16MnCr5": "1.7131",
+    "16MnCrS5": "1.7139",
     "17Cr3": "1.7016",
     "20MnCr5": "1.7147",
     "25CrMo4": "1.7218",
@@ -107,7 +108,14 @@ def fix_material(material: str) -> str:
     
     material_clean = material.strip()
     
-    # 1. Exact match in known fixes
+    # 1. Strip + suffixes (e.g. 1.4057+QT800+2H -> 1.4057), but keep C45+C
+    if '+' in material_clean and material_clean.upper() != "C45+C":
+        material_clean = material_clean.split('+')[0].strip()
+        logger.info(f"Validator: Stripped '+' suffixes from material: '{material}' -> '{material_clean}'")
+    elif material_clean.upper() == "C45+C":
+        material_clean = "C45+C"
+
+    # 2. Exact match in known fixes
     if material_clean in MATERIAL_FIX_MAP:
         fixed = MATERIAL_FIX_MAP[material_clean]
         logger.info(f"Material auto-corrected: '{material}' -> '{fixed}'")
@@ -314,14 +322,15 @@ def extract_heat_treatment(text: str) -> Optional[str]:
     Supports unitless ranges (geh.45-48), depth specs (0,3-0,5), and HRA.
     """
     # Pattern for ranges with optional units and optional case depth: geh. 50-55 HRC, verg. 900-1100, geh.56-60 0,3-0,5
-    pattern = r'(?i)(?:geh\.?|verg\.?)\s*(?:Rm\s*)?(?:HRA\s*)?\d{1,4}(?:[-+]\d{1,4})?(?:\+/-?\d+)?\s*(?:HRC|HRA|HV\d*|N/mm²|%)?(?:\s*\d+,\d+-\d+,\d+)?'
+    # Added: Wärmebehandlung, Wärmeb., Gehärtet
+    pattern = r'(?i)(?:geh\.?|verg\.?|Wärmebehandlung|Wärmeb\.?|Gehärtet)\s*(?:Rm\s*)?(?:HRA\s*)?\d{1,4}(?:[-+]\d{1,4})?(?:\+/-?\d+)?\s*(?:HRC|HRA|HV\d*|N/mm²|%)?(?:\s*\d+,\d+-\d+,\d+)?'
     match = re.search(pattern, text)
     if match:
         extracted = match.group(0).strip()
         return extracted
     
     # Pattern for specific norms: geh. N533.05 or just N533
-    norm_match = re.search(r'(?i)(geh\.?)\s*(?:n\.?\s*Norm\s*)?(N\d{3}(?:\.\d+)?)', text)
+    norm_match = re.search(r'(?i)(geh\.?|Wärmebehandlung|Wärmeb\.?|Gehärtet)\s*(?:n\.?\s*Norm\s*)?(N\d{3}(?:\.\d+)?)', text)
     if norm_match:
         # Return the whole string "geh. N533"
         return re.sub(r'\s+', ' ', norm_match.group(0).strip())
@@ -344,6 +353,9 @@ def extract_surface_treatment(text: str) -> Optional[str]:
     Extracts surface treatments using a pattern dictionary and maps them to canonical forms.
     """
     mapping = {
+        r'Oberflächenbehandlung': 'Oberflächenbehandlung',
+        r'Oberfläche': 'Oberfläche',
+        r'Oberfl\.': 'Oberfl.',
         r'poliert': 'poliert',
         r'verzinkt': 'verzinkt',
         r'verz\.': 'verz.',
@@ -393,7 +405,13 @@ def extract_marking(text: str) -> Optional[str]:
         r'gekennz\.': 'gekennz.',
         r'Kennzeich\.': 'Kennzeich.',
         r'gekennzeichnet': 'gekennzeichnet',
-        r'KZ': 'KZ'
+        r'KZ': 'KZ',
+        r'KX': 'KX',
+        r'SS': 'SS',
+        r'HC': 'HC',
+        r'T': 'T',
+        r'Ken\.': 'Ken.',
+        r'Kennz\.': 'Kennz.'
     }
     
     sorted_patterns = sorted(mapping.keys(), key=len, reverse=True)

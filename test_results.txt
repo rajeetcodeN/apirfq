@@ -1,0 +1,18 @@
+Testing Surface Treatment:
+  'Oberflächenbehandlung poliert' -> 'Oberflächenbehandlung'
+  'Oberfläche verzinkt' -> 'Oberfläche'
+  'Oberfl. brüniert' -> 'Oberfl.'
+
+Testing Heat Treatment:
+  'Wärmebehandlung 50-55HRC' -> 'Wärmebehandlung 50-55HRC'
+  'Wärmeb. 900-1100' -> 'Wärmeb. 900-1100'
+  'Gehärtet 60HRC' -> 'Gehärtet 60HRC'
+  'Geh. N533' -> 'Geh. N533'
+
+Testing Marking:
+  'KX identifier' -> 'KX'
+  'SS marking' -> 'SS'
+  'HC code' -> 'HC'
+  'T spec' -> 'T'
+  'Ken. 123' -> 'Ken.'
+  'Kennz. ABC' -> 'Kennz.'
