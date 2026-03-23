@@ -399,6 +399,10 @@ def extract_marking(text: str) -> Optional[str]:
     """
     Extracts marking designations using literal keywords.
     """
+    # 0. Strict Blacklist: IGNORE packaging codes like VP100, VP200, etc.
+    if re.search(r'(?i)\bVP\d+\b', text):
+        return None
+
     mapping = {
         r'gek\.\s*DD': 'gek. DD',
         r'gekennz\.': 'gekennz.',
