@@ -23,7 +23,6 @@ salzbadnitrieren
 geh. n. Norm N533
 verg.min 900
 nitriert   “Processes for surface hardening (case hardening) are also counted among surface treatments, such as nitriding.”
-QT 800
 
 # Surface Treatment
 poliert

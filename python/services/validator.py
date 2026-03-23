@@ -376,7 +376,6 @@ def extract_surface_treatment(text: str) -> Optional[str]:
         r'phosph': 'phosph',
         r'phos\.': 'phos.',
         r'PREN\s*>\s*40': 'PREN >40',
-        r'\+?QT\s*800': 'QT 800',
         r'carbo(?:\.\s*\d+(?:-\d+)?)?(?:HRC)?': 'carbo',
         r'carb': 'carb',
         r'salzbad(?:nitrier(?:t|en|ung)?)?': 'salzbadnitriert',
