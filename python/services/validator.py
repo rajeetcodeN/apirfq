@@ -72,6 +72,21 @@ NUMBER_TO_MATERIAL = {v: k for k, v in MATERIAL_NUMBER_MAP.items() if v}
 # All valid material names AND numbers
 VALID_MATERIALS = set(MATERIAL_NUMBER_MAP.keys()) | {v for v in MATERIAL_NUMBER_MAP.values() if v}
 
+def map_to_base_form(form: str) -> Optional[str]:
+    """
+    Maps specific forms to generic 'Base Forms'.
+    Parallel key form A applies to: AS / C / E
+    Parallel key form B applies to: D / F / G / H / J
+    Parallel key form AB applies to: ABS / CD / EF
+    """
+    if not form:
+        return form
+    f = form.strip().upper()
+    if f in {"A", "AS", "C", "E"}: return "A"
+    if f in {"B", "D", "F", "G", "H", "J"}: return "B"
+    if f in {"AB", "ABS", "CD", "EF"}: return "AB"
+    return f
+
 # Known bad -> correct mappings
 MATERIAL_FIX_MAP = {
     # C45 variants all map to C45+C
@@ -656,7 +671,7 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                     elif "C45K" in tu: config["material"] = "C45K"
             
             # Form Sanitization & Recovery
-            VALID_FORMS = {"A", "B", "C", "D", "E", "F", "AB", "AS", "BS", "ABS", "CD", "EF", "K"}
+            VALID_FORMS = {"A", "B", "C", "D", "E", "F", "G", "H", "J", "AB", "AS", "BS", "ABS", "CD", "EF", "K"}
             current_form = config.get("form", "").strip().upper() if config.get("form") else ""
             if current_form and current_form not in VALID_FORMS:
                  logger.warning(f"Validator: Invalid Form '{current_form}' - stripping.")
@@ -682,6 +697,9 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             mk = extract_marking(text_to_scan)
             if mk: config["marking"] = mk
             else: config["marking"] = None if config.get("marking") and not extract_marking(config["marking"]) else config.get("marking")
+
+            # Finalize Base Form mapping (Keep original form for article name but add base_form for routing)
+            config["base_form"] = map_to_base_form(config.get("form"))
 
             item["config"] = config
 

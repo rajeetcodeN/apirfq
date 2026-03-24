@@ -31,7 +31,7 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
     - material_id: The structured material ID if present (Format: 100-xxx-xxx.xx-xx).
     - standard: Standard or DIN (e.g., "DIN 6885").
     - form: The exact form letter/code.
-      * MUST be one of: "A", "B", "C", "D", "E", "F", "AB", "AS", "BS", "ABS", "CD", "EF", "K".
+      * MUST be one of: "A", "B", "C", "D", "E", "F", "G", "H", "J", "AB", "AS", "BS", "ABS", "CD", "EF", "K".
       * If the text contains an invalid form (e.g. "FC", "PF"), DO NOT extract it as a form. Return null instead.
       * Pay attention to multi-letter forms like "ABS", "CD", "EF", "BS".
       * **CRITICAL**: Do NOT confuse dimension labels with the Form. "B=10" means Form is NOT "B".
