@@ -25,9 +25,9 @@ def mock_extract(text, native_text=None, user_feedback=None, is_chunk=False):
 async def test_parallel_batch_extraction_logic():
     """
     Verifies that extract_data_from_text_async correctly chunks 
-    a 30-item text into 2 parallel batches and merges them.
+    a 30-item text into 3 parallel batches and merges them.
     """
-    # Simulate a 30-item RFQ text (should trigger 2 chunks of 25 + 5)
+    # Simulate a 30-item RFQ text (should trigger 3 chunks of 10)
     items_text = ""
     for i in range(1, 31):
         items_text += f"Pos {i}  PF A 8h8x7x{20+i} C45+C\n"
@@ -42,8 +42,8 @@ async def test_parallel_batch_extraction_logic():
         metadata = result.get("metadata", {})
         
         # 1. Verify chunk count
-        assert metadata.get("batch_count") == 2
-        assert mock_api.call_count == 2
+        assert metadata.get("batch_count") == 3
+        assert mock_api.call_count == 3
         
         # 2. Verify total items
         assert len(items) == 30
@@ -57,7 +57,7 @@ async def test_parallel_batch_extraction_logic():
 
 @pytest.mark.asyncio
 async def test_single_chunk_fallback():
-    """Verifies that small files (<= 25 items) do NOT trigger chunking."""
+    """Verifies that small files (<= 10 items) do NOT trigger chunking."""
     small_text = "Pos 1  PF A 8X7X40 C45+C"
     
     with patch('services.ai.extract_data_from_text', side_effect=mock_extract) as mock_api:

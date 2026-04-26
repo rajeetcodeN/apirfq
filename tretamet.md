@@ -22,7 +22,9 @@ geh.670HV10
 salzbadnitrieren
 geh. n. Norm N533
 verg.min 900
-nitriert   “Processes for surface hardening (case hardening) are also counted among surface treatments, such as nitriding.”
+nitriert
+Wärmebehandlung
+Wärmeb.
 
 # Surface Treatment
 poliert
@@ -44,6 +46,9 @@ zinkphosphatiert
 phosph 
 phos.
 PREN >40
+Oberflächenbehandlung
+Oberfläche
+Oberfl.
 
 # Marking
 marking gek. DD
@@ -51,3 +56,9 @@ gekennz.
 Kennzeich.
 gekennzeichnet
 KZ
+KX
+SS
+HC
+T
+Ken.
+Kennz.

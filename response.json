@@ -1,0 +1,541 @@
+{
+  "status": "success",
+  "metadata": {
+    "source": "hybrid_pdf",
+    "document_type": "Purchase Order"
+  },
+  "header": {
+    "supplier_name": "Nosta GmbH",
+    "customer_name": "INDUSTRY\n\nW\u00fcrth Industrie Service GmbH",
+    "document_type": "Purchase Order",
+    "document_date": "27.01.2026",
+    "customer_number": "103524",
+    "rfq_number": "95098553"
+  },
+  "data": {
+    "supplier_name": "W\u00dcRTH Industrie Service GmbH & Co. KG",
+    "supplier_address": "Drillberg, 97980 Bad Mergentheim",
+    "customer_name": "{{COMPANY_1}}",
+    "customer_address": "An der Bahn 5, 89420 H\u00f6chst\u00e4dt",
+    "document_number": "{{HEADER_VAL_1}}",
+    "document_date": "2026-01-27",
+    "supplier_number": "{{HEADER_VAL_2}}",
+    "contact_name": "Tanmay Tekawade",
+    "contact_phone": "{{PHONE}}",
+    "contact_email": "{{EMAIL_1}}",
+    "delivery_address": "W\u00fcrth Industrie Service GmbH & Co. KG, Wareneingang 106, Drillberg - Entladestelle Geb. 106 (2300), 97980 Bad Mergentheim",
+    "payment_terms": "bis zum 25. des Folgemonats 3 % Skonto innerhalb von 60 Tagen ohne Abzug",
+    "delivery_terms": "FCA Hoechstaedt",
+    "requested_items": [
+      {
+        "pos": 1,
+        "config": {
+          "material_id": "100-002-773.01-00",
+          "standard": "DIN 6885",
+          "form": "A",
+          "material": "C45+C",
+          "dimensions": {
+            "width": 10.0,
+            "height": 8.0,
+            "length": 60.0
+          },
+          "features": [
+            {
+              "feature_type": "tolerance",
+              "spec": "h9",
+              "position": "width"
+            }
+          ],
+          "heat_treatment": null,
+          "surface_treatment": null,
+          "marking": null,
+          "weight_per_unit": null
+        },
+        "article_name": "PF-A-10X8X60-C45+C-h9",
+        "supplier_material_number": "041010086",
+        "customer_material_number": null,
+        "quantity": 100,
+        "unit": "pcs",
+        "delivery_date": "2026-06-08",
+        "metadata": {
+          "raw_text_snippet": "PASSFED-DIN6885-C45C-A-10X8X60\nEAN-Code:4046778429618\nLieferanten-Artikelnr.:100-002-773.01-00\nAngebotsnummer: 20021702\nAnzahl Pakete:10\nBereitstellungsdatum 08.06.2026",
+          "rule_confidence_score": 1.0
+        }
+      },
+      {
+        "pos": 2,
+        "config": {
+          "material_id": "100-003-467.01-00",
+          "standard": "DIN 6885",
+          "form": "A",
+          "material": "C45+C",
+          "dimensions": {
+            "width": 25.0,
+            "height": 14.0,
+            "length": 180.0
+          },
+          "features": [
+            {
+              "feature_type": "tolerance",
+              "spec": "h9",
+              "position": "width"
+            }
+          ],
+          "heat_treatment": null,
+          "surface_treatment": null,
+          "marking": null,
+          "weight_per_unit": null
+        },
+        "article_name": "PF-A-25X14X180-C45+C-h9",
+        "supplier_material_number": "041025 180092 20",
+        "customer_material_number": null,
+        "quantity": 240,
+        "unit": "pcs",
+        "delivery_date": "2026-02-02",
+        "metadata": {
+          "raw_text_snippet": "PASSFED-DIN6885-C45C-A-25X14X180\nEAN-Code:4055374029702\nLieferanten-Artikelnr.:100-003-467.01-00\nAngebotsnummer: 20002123\nAnzahl Pakete:12\nBereitstellungsdatum 02.02.2026",
+          "rule_confidence_score": 1.0
+        }
+      },
+      {
+        "pos": 3,
+        "config": {
+          "material_id": "100-003-513.01-00",
+          "standard": "DIN 6885",
+          "form": "A",
+          "material": "C45+C",
+          "dimensions": {
+            "width": 28.0,
+            "height": 16.0,
+            "length": 130.0
+          },
+          "features": [
+            {
+              "feature_type": "tolerance",
+              "spec": "h9",
+              "position": "width"
+            }
+          ],
+          "heat_treatment": null,
+          "surface_treatment": null,
+          "marking": null,
+          "weight_per_unit": null
+        },
+        "article_name": "PF-A-28X16X130-C45+C-h9",
+        "supplier_material_number": "041028 130090 10",
+        "customer_material_number": null,
+        "quantity": 10,
+        "unit": "pcs",
+        "delivery_date": "2026-02-02",
+        "metadata": {
+          "raw_text_snippet": "PASSFED-DIN6885-C45C-A-28X16X130\nEAN-Code:4049557715797\nLieferanten-Artikelnr.:100-003-513.01-00\nAngebotsnummer: 20021847\nAnzahl Pakete:1\nBereitstellungsdatum 02.02.2026",
+          "rule_confidence_score": 1.0
+        }
+      },
+      {
+        "pos": 4,
+        "config": {
+          "material_id": "100-002-582.01-00",
+          "standard": "DIN 6885",
+          "form": "A",
+          "material": "C45+C",
+          "dimensions": {
+            "width": 8.0,
+            "height": 7.0,
+            "length": 12.0
+          },
+          "features": [
+            {
+              "feature_type": "tolerance",
+              "spec": "h9",
+              "position": "width"
+            }
+          ],
+          "heat_treatment": null,
+          "surface_treatment": null,
+          "marking": null,
+          "weight_per_unit": null
+        },
+        "article_name": "PF-A-8X7X12-C45+C-h9",
+        "supplier_material_number": "0410080712092 1000",
+        "customer_material_number": null,
+        "quantity": 7000,
+        "unit": "pcs",
+        "delivery_date": "2026-05-01",
+        "metadata": {
+          "raw_text_snippet": "PASSFED-DIN6885-C45C-A-8X7X12\nEAN-Code:4052712564369\nLieferanten-Artikelnr.:100-002-582.01-00\nAngebotsnummer: 20023061\nAnzahl Pakete:7\nBereitstellungsdatum 01.05.2026",
+          "rule_confidence_score": 1.0
+        }
+      },
+      {
+        "pos": 5,
+        "config": {
+          "material_id": "100-002-741.01-00",
+          "standard": "DIN 6885",
+          "form": "A",
+          "material": "C45+C",
+          "dimensions": {
+            "width": 10.0,
+            "height": 8.0,
+            "length": 25.0
+          },
+          "features": [
+            {
+              "feature_type": "tolerance",
+              "spec": "h9",
+              "position": "width"
+            }
+          ],
+          "heat_treatment": null,
+          "surface_treatment": null,
+          "marking": null,
+          "weight_per_unit": null
+        },
+        "article_name": "PF-A-10X8X25-C45+C-h9",
+        "supplier_material_number": "0410100825092 200",
+        "customer_material_number": null,
+        "quantity": 6000,
+        "unit": "pcs",
+        "delivery_date": "2026-02-23",
+        "metadata": {
+          "raw_text_snippet": "PASSFED-DIN6885-C45C-A-10X8X25\nEAN-Code:4046778022468\nLieferanten-Artikelnr.:100-002-741.01-00\nAngebotsnummer: 20011585\nAnzahl Pakete:30\nBereitstellungsdatum 23.02.2026",
+          "rule_confidence_score": 1.0
+        }
+      },
+      {
+        "pos": 6,
+        "config": {
+          "material_id": "100-002-765.01-00",
+          "standard": "DIN 6885",
+          "form": "A",
+          "material": "C45+C",
+          "dimensions": {
+            "width": 10.0,
+            "height": 8.0,
+            "length": 50.0
+          },
+          "features": [
+            {
+              "feature_type": "tolerance",
+              "spec": "h9",
+              "position": "width"
+            }
+          ],
+          "heat_treatment": null,
+          "surface_treatment": null,
+          "marking": null,
+          "weight_per_unit": null
+        },
+        "article_name": "PF-A-10X8X50-C45+C-h9",
+        "supplier_material_number": "0410100850092 200",
+        "customer_material_number": null,
+        "quantity": 15000,
+        "unit": "pcs",
+        "delivery_date": "2026-04-13",
+        "metadata": {
+          "raw_text_snippet": "PASSFED-DIN6885-C45C-A-10X8X50\nEAN-Code:4038898582403\nLieferanten-Artikelnr.:100-002-765.01-00\nAngebotsnummer: 20019811\nAnzahl Pakete:75\nBereitstellungsdatum 13.04.2026",
+          "rule_confidence_score": 1.0
+        }
+      },
+      {
+        "pos": 7,
+        "config": {
+          "material_id": "100-002-869.01-00",
+          "standard": "DIN 6885",
+          "form": "A",
+          "material": "C45+C",
+          "dimensions": {
+            "width": 12.0,
+            "height": 8.0,
+            "length": 25.0
+          },
+          "features": [
+            {
+              "feature_type": "tolerance",
+              "spec": "h9",
+              "position": "width"
+            }
+          ],
+          "heat_treatment": null,
+          "surface_treatment": null,
+          "marking": null,
+          "weight_per_unit": null
+        },
+        "article_name": "PF-A-12X8X25-C45+C-h9",
+        "supplier_material_number": "0410120825092 100",
+        "customer_material_number": null,
+        "quantity": 500,
+        "unit": "pcs",
+        "delivery_date": "2026-06-01",
+        "metadata": {
+          "raw_text_snippet": "PASSFED-DIN6885-C45C-A-12X8X25\nEAN-Code:4065232124845\nLieferanten-Artikelnr.:100-002-869.01-00\nAngebotsnummer: 20021702\nAnzahl Pakete:5\nBereitstellungsdatum 01.06.2026",
+          "rule_confidence_score": 1.0
+        }
+      },
+      {
+        "pos": 8,
+        "config": {
+          "material_id": "100-003-368.01-00",
+          "standard": "DIN 6885",
+          "form": "A",
+          "material": "C45+C",
+          "dimensions": {
+            "width": 22.0,
+            "height": 14.0,
+            "length": 45.0
+          },
+          "features": [
+            {
+              "feature_type": "tolerance",
+              "spec": "h9",
+              "position": "width"
+            }
+          ],
+          "heat_treatment": null,
+          "surface_treatment": null,
+          "marking": null,
+          "weight_per_unit": null
+        },
+        "article_name": "PF-A-22X14X45-C45+C-h9",
+        "supplier_material_number": "0410221445090 10",
+        "customer_material_number": null,
+        "quantity": 60,
+        "unit": "pcs",
+        "delivery_date": "2026-04-13",
+        "metadata": {
+          "raw_text_snippet": "PASSFED-DIN6885-C45C-A-22X14X45\nEAN-Code:4024835316095\nLieferanten-Artikelnr.:100-003-368.01-00\nAnzahl Pakete:6\nBereitstellungsdatum 13.04.2026\n9    041025 100092 30        30   600    93,11  100              558,66",
+          "rule_confidence_score": 1.0
+        }
+      },
+      {
+        "pos": 9,
+        "config": {
+          "material_id": "100-003-450.01-00",
+          "standard": "DIN 6885",
+          "form": "A",
+          "material": "C45+C",
+          "dimensions": {
+            "width": 25.0,
+            "height": 14.0,
+            "length": 100.0
+          },
+          "features": [
+            {
+              "feature_type": "tolerance",
+              "spec": "h9",
+              "position": "width"
+            }
+          ],
+          "heat_treatment": null,
+          "surface_treatment": null,
+          "marking": null,
+          "weight_per_unit": null
+        },
+        "article_name": "PF-A-25X14X100-C45+C-h9",
+        "supplier_material_number": "041025 100092 30",
+        "customer_material_number": null,
+        "quantity": 600,
+        "unit": "pcs",
+        "delivery_date": "2026-06-22",
+        "metadata": {
+          "raw_text_snippet": "PASSFED-DIN6885-C45C-A-25X14X100\nEAN-Code:4038898735328\nLieferanten-Artikelnr.:100-003-450.01-00\nAngebotsnummer: 20020266\nAnzahl Pakete:20\nBereitstellungsdatum 22.06.2026",
+          "rule_confidence_score": 1.0
+        }
+      },
+      {
+        "pos": 10,
+        "config": {
+          "material_id": "100-003-557.01-51",
+          "standard": "DIN 6885",
+          "form": "A",
+          "material": "C45+C",
+          "dimensions": {
+            "width": 32.0,
+            "height": 18.0,
+            "length": 110.0
+          },
+          "features": [
+            {
+              "feature_type": "tolerance",
+              "spec": "h9",
+              "position": "width"
+            }
+          ],
+          "heat_treatment": null,
+          "surface_treatment": null,
+          "marking": null,
+          "weight_per_unit": null
+        },
+        "article_name": "PF-A-32X18X110-C45+C-h9",
+        "supplier_material_number": "041032 110090 25",
+        "customer_material_number": null,
+        "quantity": 200,
+        "unit": "pcs",
+        "delivery_date": "2026-02-02",
+        "metadata": {
+          "raw_text_snippet": "PASSFED-DIN6885-C45C-A-32X18X110\nEAN-Code:4061338919033\nLieferanten-Artikelnr.:100-003-557.01-51\nAnzahl Pakete:6\nBereitstellungsdatum 02.02.2026\n11   0410716045092 100      100   800    19,72  100              157,76",
+          "rule_confidence_score": 1.0
+        }
+      },
+      {
+        "pos": 11,
+        "config": {
+          "material_id": "100-004-148.01-00",
+          "standard": "DIN 6885",
+          "form": "B",
+          "material": "C45+C",
+          "dimensions": {
+            "width": 16.0,
+            "height": 10.0,
+            "length": 45.0
+          },
+          "features": [
+            {
+              "feature_type": "tolerance",
+              "spec": "h9",
+              "position": "width"
+            }
+          ],
+          "heat_treatment": null,
+          "surface_treatment": null,
+          "marking": null,
+          "weight_per_unit": null
+        },
+        "article_name": "PF-B-16X10X45-C45+C-h9",
+        "supplier_material_number": "0410716045092 100",
+        "customer_material_number": null,
+        "quantity": 100,
+        "unit": "pcs",
+        "delivery_date": "2026-03-09",
+        "metadata": {
+          "raw_text_snippet": "PASSFED-DIN6885-C45C-B-16X10X45\nEAN-Code:4045727010273\nLieferanten-Artikelnr.:100-004-148.01-00\nAngebotsnummer: 20024461\nAnzahl Pakete:8\nBereitstellungsdatum 09.03.2026",
+          "rule_confidence_score": 1.0
+        }
+      },
+      {
+        "pos": 12,
+        "config": {
+          "material_id": "100-013-352.01-00",
+          "standard": "DIN 6885",
+          "form": "AS",
+          "material": "C45+C",
+          "dimensions": {
+            "width": 20.0,
+            "height": 12.0,
+            "length": 50.0
+          },
+          "features": [
+            {
+              "feature_type": "thread",
+              "spec": "M6",
+              "position": null
+            },
+            {
+              "feature_type": "tolerance",
+              "spec": "h9",
+              "position": "width"
+            }
+          ],
+          "heat_treatment": null,
+          "surface_treatment": null,
+          "marking": null,
+          "weight_per_unit": null
+        },
+        "article_name": "PF-AS-20X12X50-C45+C-M6-h9",
+        "supplier_material_number": "0991627183092 50",
+        "customer_material_number": null,
+        "quantity": 200,
+        "unit": "pcs",
+        "delivery_date": "2026-03-12",
+        "metadata": {
+          "raw_text_snippet": "PASSFED-DIN6885-C45K-AS-20X12X50-M6\nEAN-Code:4099619245199\nLieferanten-Artikelnr.:100-013-352.01-00\nAngebotsnummer: 20017838\nAnzahl Pakete:4\nBereitstellungsdatum 12.03.2026",
+          "rule_confidence_score": 1.0
+        }
+      },
+      {
+        "pos": 13,
+        "config": {
+          "material_id": "100-012-952.01-00",
+          "standard": "DIN 6885",
+          "form": "AS",
+          "material": "C45K",
+          "dimensions": null,
+          "features": [
+            {
+              "feature_type": "thread",
+              "spec": "M4",
+              "position": null
+            },
+            {
+              "feature_type": "coating",
+              "spec": "NZG",
+              "position": null
+            }
+          ],
+          "heat_treatment": null,
+          "surface_treatment": null,
+          "marking": null,
+          "weight_per_unit": null
+        },
+        "article_name": null,
+        "supplier_material_number": "0991748972092 100",
+        "customer_material_number": null,
+        "quantity": 300,
+        "unit": "pcs",
+        "delivery_date": "2026-02-02",
+        "metadata": {
+          "raw_text_snippet": "AEDIN6885-C45K-AS-8H9X7X36-M4-NZG\nEAN-Code:4055374519807\nLieferanten-Artikelnr.:100-012-952.01-00\nAngebotsnummer: 20024122\nAnzahl Pakete:3\nBereitstellungsdatum 02.02.2026",
+          "rule_confidence_score": 0.8,
+          "verification_result": {
+            "is_correct": false,
+            "confidence_score": 0.3,
+            "correction": {
+              "pos": 13,
+              "config": {
+                "material_id": "100-012-952.01-00",
+                "standard": "DIN 6885",
+                "form": "AS",
+                "material": "C45K",
+                "dimensions": null,
+                "features": [
+                  {
+                    "feature_type": "thread",
+                    "spec": "M4",
+                    "position": null
+                  },
+                  {
+                    "feature_type": "coating",
+                    "spec": "NZG",
+                    "position": null
+                  }
+                ],
+                "heat_treatment": null,
+                "surface_treatment": null,
+                "marking": null,
+                "weight_per_unit": null
+              },
+              "article_name": null,
+              "supplier_material_number": "100-012-952.01-00",
+              "customer_material_number": null,
+              "quantity": 3,
+              "unit": "packages",
+              "delivery_date": "2026-02-02",
+              "metadata": {
+                "raw_text_snippet": "AEDIN6885-C45K-AS-8H9X7X36-M4-NZG\nEAN-Code:4055374519807\nLieferanten-Artikelnr.:100-012-952.01-00\nAngebotsnummer: 20024122\nAnzahl Pakete:3\nBereitstellungsdatum 02.02.2026",
+                "rule_confidence_score": 0.95
+              }
+            },
+            "reason": "1. Hallucinated Dimensions: The text does not contain any dimensions (e.g., 8.0, 7.0, 36.0). The AI incorrectly extracted these from the material code 'AEDIN6885-C45K-AS-8H9X7X36-M4-NZG' (where '8H9X7X36' is part of the code, not dimensions). 2. Material Mismatch: The AI extracted 'C45+C' as material, but the text shows 'C45K'. 3. Quantity Mismatch: The AI extracted '300 pcs', but the text states 'Anzahl Pakete:3' (3 packages). 4. Unit Mismatch: The AI used 'pcs', but the text implies 'packages' (or 'Pakete'). 5. Supplier Material Number: The AI extracted an incorrect supplier number ('0991748972092 100') not present in the text."
+          },
+          "status": "auto_corrected_by_verifier"
+        }
+      }
+    ],
+    "total_amount": 5031.53,
+    "currency": "EUR",
+    "additional_terms": "Es gelten ausschlie\u00dflich die Allgemeinen Einkaufsbedingungen der W\u00fcrth Industrie Service GmbH & Co. KG (WIS). Andere Bedingungen werden nicht Vertragsinhalt, auch wenn die WIS diesen nicht ausdr\u00fccklich widerspricht. Nimmt die WIS die Lieferung/Leistung ohne ausdr\u00fccklichen Widerspruch entgegen, so kann hieraus in keinem Fall abgeleitet werden, dass die WIS die Lieferbedingungen des Lieferanten angenommen hat. Die Bereitstellung bzw. Lieferung der Ware hat entsprechend unseren Transport- und Verpackungsvorschriften zu erfolgen. Die jeweils aktuelle Fassung der Allgemeinen Einkaufsbedingungen sowie der Transport- und Verpackungsvorschriften ist unter www.wuerth-industrie.com einsehbar. Es gilt deutsches Recht. Gerichtsstand ist Bad Mergentheim."
+  },
+  "debug": {
+    "tokens_masked": 7
+  }
+}

@@ -319,15 +319,34 @@ def extract_shaft_tolerance(text: str) -> List[Dict[str, str]]:
 def extract_heat_treatment(text: str) -> Optional[str]:
     """
     Extracts heat treatment designations like geh.50-55HRC, verg. Rm 900-1000 N/mm², nitriert, etc.
-    Supports unitless ranges (geh.45-48), depth specs (0,3-0,5), and HRA.
+    Supports unitless ranges (geh.45-48), depth specs (EHT:0,3-0,5), HRA, HV10, and Standalone keywords.
     """
-    # Pattern for ranges with optional units and optional case depth: geh. 50-55 HRC, verg. 900-1100, geh.56-60 0,3-0,5
-    # Added: Wärmebehandlung, Wärmeb., Gehärtet
-    pattern = r'(?i)(?:geh\.?|verg\.?|Wärmebehandlung|Wärmeb\.?|Gehärtet)\s*(?:Rm\s*)?(?:HRA\s*)?\d{1,4}(?:[-+]\d{1,4})?(?:\+/-?\d+)?\s*(?:HRC|HRA|HV\d*|N/mm²|%)?(?:\s*\d+,\d+-\d+,\d+)?'
+    # Expanded Pattern:
+    # 1. Keywords: geh, verg, carbo, nitrieren, etc.
+    # 2. Hardness specs: Rm, HRA, HV, HRC, N/mm2, %, +/- tolerances, ranges with -
+    # 3. Case depth / EHT: EHT:0,3-0,5 or just 0,3-0,5
+    # 4. Standalone keywords: Gehärtet, Wärmeb. etc.
+    
+    # Updated pattern components:
+    # Keywords (LONGER/MORE SPECIFIC FIRST)
+    kws = r'(?:Wärmebehandlung|Wärmeb\.?|Gehärtet|Vergütet|salzbadnitrier(?:t|en|ung)?|nitrier(?:t|en|ung)?|carbo?\.?|carb\b|geh\.?|verg\.?)'
+    # Measurement types/Prefixes
+    prefixes = r'(?:\s*(?:Rm\s*|HRA\s*|EHT\s*:?\s*|min\s*))?'
+    # Value ranges/tolerances
+    values = r'(?:\s*(?:\d+(?:[.,]\d+)?(?:[-+]\d+(?:[.,]\d+)?)?(?:\+/-?\d+)?))?'
+    # Units
+    units = r'(?:\s*(?:HRC|HRA|HV\d*|N/mm²|%))?'
+    # Secondary specs (EHT suffix) - Allows optional comma
+    suffix = r'(?:\s*,?\s*EHT\s*:?\s*\d+(?:[.,]\d+)?(?:[-+]\d+(?:[.,]\d+)?)?)?'
+    
+    pattern = r'(?i)' + kws + prefixes + values + units + suffix
+    
     match = re.search(pattern, text)
     if match:
         extracted = match.group(0).strip()
-        return extracted
+        # Heuristic: must be longer than 1 char and not just a space
+        if len(extracted) > 1:
+            return extracted
     
     # Pattern for specific norms: geh. N533.05 or just N533
     norm_match = re.search(r'(?i)(geh\.?|Wärmebehandlung|Wärmeb\.?|Gehärtet)\s*(?:n\.?\s*Norm\s*)?(N\d{3}(?:\.\d+)?)', text)
@@ -376,14 +395,12 @@ def extract_surface_treatment(text: str) -> Optional[str]:
         r'phosph': 'phosph',
         r'phos\.': 'phos.',
         r'PREN\s*>\s*40': 'PREN >40',
-        r'carbo(?:\.\s*\d+(?:-\d+)?)?(?:HRC)?': 'carbo',
-        r'carb': 'carb',
-        r'salzbad(?:nitrier(?:t|en|ung)?)?': 'salzbadnitriert',
-        r'nitrier(?:t|en|ung)?': 'nitriert',
     }
     
-    # We want to check longer patterns first so 'vernickelt DNC 520' matches before 'vernickelt'
-    sorted_patterns = sorted(mapping.keys(), key=len, reverse=True)
+    # Move generic headers to the end of the search list to prioritize specific treatments
+    generic_headers = {r'Oberflächenbehandlung', r'Oberfläche', r'Oberfl\.'}
+    sorted_patterns = sorted([p for p in mapping.keys() if p not in generic_headers], key=len, reverse=True)
+    sorted_patterns += sorted(list(generic_headers), key=len, reverse=True)
     
     for pat in sorted_patterns:
         # Use boundary logic: 
@@ -598,7 +615,7 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             if target_line_idx >= 0:
                 # Grab a window of context (up to 3 lines above/below)
                 start_context = max(0, target_line_idx - 2)
-                end_context = min(len(source_lines), target_line_idx + 4)
+                end_context = min(len(source_lines), target_line_idx + 10)
                 text_to_scan = "\n".join(source_lines[start_context:end_context])
             elif target_line_idx == -2:
                 text_to_scan = target_line
