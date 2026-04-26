@@ -690,10 +690,24 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
 
             # Treatments (Override AI)
             st = extract_surface_treatment(text_to_scan)
-            if st: config["surface_treatment"] = st
+            config["surface_treatment"] = st
             
             ht = extract_heat_treatment(text_to_scan)
-            if ht: config["heat_treatment"] = ht
+            config["heat_treatment"] = ht
+
+            # --- DANGER CLEANUP: Purge duplicate "coating" features if they match treatments ---
+            # If AI extracted "nitriert" as a feature of type "coating", but it's now in heat_treatment, remove it.
+            if config.get("features"):
+                final_features = []
+                for feat in config["features"]:
+                    spec = str(feat.get("spec", "")).strip().lower()
+                    # Skip if it's a duplication of HT or ST
+                    if ht and spec in str(ht).lower():
+                         continue
+                    if st and spec in str(st).lower():
+                         continue
+                    final_features.append(feat)
+                config["features"] = final_features
 
             # Marking
             mk = extract_marking(text_to_scan)

@@ -87,8 +87,8 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
         - **RIGHT EXAMPLE**: Item 1 "PF C 12x8x50 C60" -> no tolerance written -> features: [{type:"tolerance", spec:"h9", position:"width"}]
       * **CONSTRAINT**: Only extract M-codes between M1 and M21.
       * Example: "AS-8h6X7X36-M4-NZG" -> features: [{type:"tolerance",spec:"h6",position:"width"},{type:"thread",spec:"M4"},{type:"coating",spec:"NZG"}]
-    - heat_treatment: Extracted heat treatment spec (e.g., "geh.50-55HRC", "verg.90-100", "geh.56-60 0,3-0,5", "N533"). Units like HRC/HV may be omitted.
-    - surface_treatment: Extracted surface treatment spec (e.g., "poliert", "verzinkt", "carb", "carbo.50-54", "nitriert", "salzbadnitriert", "Oberflächenbehandlung", "Oberfläche", "Oberfl."). **DO NOT EXTRACT** testing methods (like "Wirb.") or packaging units (like "VP100", "VP200").
+    - heat_treatment: Extracted heat treatment spec (e.g., "geh.50-55HRC", "verg.90-100", "geh.56-60 0,3-0,5", "carbo.50-54", "nitriert", "salzbadnitriert", "N533"). Units like HRC/HV may be omitted.
+    - surface_treatment: Extracted surface treatment spec (e.g., "poliert", "verzinkt", "Oberflächenbehandlung", "Oberfläche", "Oberfl."). **DO NOT EXTRACT** testing methods (like "Wirb.") or packaging units (like "VP100", "VP200").
     - marking: Extracted marking spec. **CRITICAL**: ONLY extract if it starts with "KZ", "KX", "SS", "HC", "T", "Ken.", "Kennz.", "gekennz.", "Kennzeich.", "gekennzeichnet", or "marking gek.". 
       * **DANGER**: DO NOT extract packaging/testing codes like "VP100", "VP200", "VP500", "NEU", "*NEUTEIL*", "QS APZ3.1", "PREN>40", "C700". They are NOT markings. If no explicitly labeled marking exists, RETURN NULL.
     - weight_per_unit: Weight per single unit if available.
