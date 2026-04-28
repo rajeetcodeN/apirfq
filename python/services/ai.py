@@ -117,7 +117,9 @@ quantity: Number of parts requested.
     - Look for the largest integer number that represents the total order amount.
   * VPE is the packaging size (e.g. 200), Menge is the actual order quantity (e.g. 2000).
   * Example: If VPE=200 and Menge=2000, extract quantity as 2000.
-  * **FALLBACK**: If multiple numbers exist (200, 2000, 100), usually the LARGEST number is the Quantity.
+  * **FALLBACK**: If multiple numbers exist (200, 2000, 100), usually the **LARGEST** number is the Quantity.
+  * **STRICT DEFAULT**: If no clear quantity is found, or if a number is mentioned without a piece-based unit (St, Stk, Stck, Stück, pcs, pcs., set, stet) and the context is ambiguous, return **0**.
+  * **NEVER** return null or default to 1 for quantity. If nothing is mentioned, send **0**.
 
 unit: Unit of measure (pcs, kg, etc.).
 
