@@ -66,6 +66,11 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
       * **HANDLE ENGLISH**: "Parallel key DIN 6885 E 8x7x80" -> Form=E, Dims=8x7x80.
       * **HANDLE DASH SEPARATORS**: "8x7x80 — 10000" -> The number after the dash is QUANTITY, not a dimension.
       * **IGNORE** loose numbers that look like material codes (e.g., ignore "100" from "100-013...").
+      * **GERMAN DECIMAL NOTATION**: In German documents, commas are decimal separators (NOT thousands separators). Convert them to dots in the output.
+        - "19,05x19,05x115" -> width=19.05, height=19.05, length=115
+        - "3,5x3x25" -> width=3.5, height=3, length=25
+        - "6,35x6,35x38" -> width=6.35, height=6.35, length=38
+        - "3,6x3,6x15" -> width=3.6, height=3.6, length=15
       * Example: "B=10 H=8 T=16" -> {width: 10, height: 8, length: 16}.
     - features: List of features. Each feature is an object { "feature_type": "...", "spec": "...", "position": "..." }.
       * **CRITICAL**: Extract ALL technical specifications (M-codes, coatings, tolerances).
