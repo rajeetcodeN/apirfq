@@ -254,10 +254,8 @@ def extract_features_from_string(text: str) -> List[Dict[str, str]]:
         if not any(f['spec'] == code.upper() for f in features):
             features.append({"feature_type": "tolerance", "spec": code.upper()})
     
-    # NZG Pattern: Nutenzugabe (groove allowance) -> Map to "coating" as requested
-    if re.search(r'(?:^|[\s\-])NZG(?:[\s\-;,]|$)', text, re.IGNORECASE):
-        if not any(f['spec'] == 'NZG' for f in features):
-            features.append({"feature_type": "coating", "spec": "NZG"})
+    # NZG/n.Zng is NO LONGER extracted as a feature (requested to keep in article name only)
+    pass
             
     return features
 
@@ -715,6 +713,16 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
 
             item["config"] = config
 
+            # Clean up potential duplicated features if they are already in text
+            unique_features = []
+            seen_specs = set()
+            for f in config.get("features", []):
+                spec = str(f.get("spec", "")).strip()
+                if spec and spec not in seen_specs and spec.lower() not in ["n.zng", "nzg"]:
+                    unique_features.append(f)
+                    seen_specs.add(spec)
+            config["features"] = unique_features
+
             # Article Name Reconstruction
             dims = config.get("dimensions", {}) or {}
             d_str = "X".join([str(int(v)) if float(v) == int(float(v)) else str(v) for v in [dims.get("width"), dims.get("height"), dims.get("length")] if v])
@@ -723,9 +731,9 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             
             base_name = "-".join([p for p in parts if p])
             
-            # Preserve n.Zng / Drawing status
+            # Preserve n.Zng / Drawing status (CLEAN: No duplication)
             if any(term in text_to_scan.lower() for term in ["n.zng", "nzg", "drawing"]):
-                if not base_name.endswith("n.Zng."):
+                if "n.Zng." not in base_name:
                     base_name += "-n.Zng."
             
             item["article_name"] = base_name

@@ -75,6 +75,7 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
         - H-tolerances (H7, H9) -> type "tolerance" 
         - Shaft tolerances (h6, h7, h8) -> type "tolerance" with "position" field
         - NZG (Nutenzugabe/groove allowance) -> type "coating"
+        - **CRITICAL**: Do NOT extract "n.Zng.", "NZG", or "Drawing" as a feature. They are NOT technical features or coatings.
       * **SHAFT TOLERANCE (h6/h7/h8/h9)**: Extract the shaft tolerance and identify WHICH dimension it applies to.
         - You may find MULTIPLE tolerances in one string (e.g. "8h8x7h8x30" -> h8 on width, h8 on height). Extract BOTH if present.
         There are 5 possible formats:
