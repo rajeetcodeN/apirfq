@@ -24,6 +24,9 @@ Strictly check for these errors:
    - Example error: "B=20" in text -> AI extracted Form="B". (CORRECT: Width=20, Form might be missing or different).
 3. **Missing Features**: Did the text have "M6", "Zinc Plated", "Tempered" that operates distinct features?
 4. **Material Mismatch**: Does the material code match the text EXACTLY?
+   - **CRITICAL**: Suffixes like **+C**, **+QT**, and **+2H** are part of the material. Do NOT extract them as separate features (like coating or tolerance).
+5. **n.Zng. Preservation**: If the text says "n.Zng.", "NZG", or "Drawing", the AI MUST append "-n.Zng." to the article_name.
+6. **No Default Tolerances**: If the text does NOT explicitly say "h6", "h8", etc., do NOT add a tolerance feature.
 
 Output a JSON object:
 {{

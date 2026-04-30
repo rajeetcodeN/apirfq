@@ -49,9 +49,9 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
       * **DIN NUMBERS**: Also extract material numbers like 1.4301, 1.4571, 1.7225, 1.0503, etc.
       * **KEYWORDS**: "VA", "V2A", "V4A", "STAINLESS" all refer to stainless steel.
       * **C45 VARIANTS**: Normalize ALL C45 variants (C45, C45K, C45C, C45E, C45R) and the number "1.0503" -> "C45+C".
-      * **SUFFIXES**: Recognize suffixes separated by '+' (e.g. "1.4057+QT800", "1.4301+C700", "1.4462+2H", "C45+C") as being part of the material specification.
+      * **SUFFIXES**: Recognize suffixes separated by '+' (e.g. "1.4057+QT", "1.7227+C", "1.4462+2H", "C45+C") as being part of the material specification.
       * **ACTION**: Extract ONLY the **base material** (e.g. "1.4057", "1.4462", "C45") and **DROP** the '+' and the suffix.
-      * **CRITICAL**: Do NOT move these recognized material suffixes into the heat_treatment or features fields. They must be identified as material-intrinsic and then discarded.
+      * **CRITICAL**: Do NOT move these recognized material suffixes into the heat_treatment or features fields. Specifically, do NOT turn **+C** into a coating or **+2H** into a tolerance (H2).
       * **IGNORE**: "P5K", "P85", "P100" (these are packaging/position codes, NOT materials).
     - dimensions: Object with `width`, `height`, `length` (numeric values).
       * **CRITICAL**: Prioritize dimensions found WITHIN the article string (e.g., "20X12X50" -> Length=50).

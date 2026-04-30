@@ -108,12 +108,11 @@ def fix_material(material: str) -> str:
     
     material_clean = material.strip()
     
-    # 1. Strip + suffixes (e.g. 1.4057+QT800+2H -> 1.4057), but keep C45+C
-    if '+' in material_clean and material_clean.upper() != "C45+C":
-        material_clean = material_clean.split('+')[0].strip()
-        logger.info(f"Validator: Stripped '+' suffixes from material: '{material}' -> '{material_clean}'")
-    elif material_clean.upper() == "C45+C":
+    # 1. Normalize C45 variants to C45+C
+    if material_clean.upper() in ["C45", "C45K", "C45C", "C45E", "C45R", "1.0503"]:
         material_clean = "C45+C"
+    
+    # NOTE: We NO LONGER strip '+' suffixes here as they are part of the designation.
 
     # 2. Exact match in known fixes
     if material_clean in MATERIAL_FIX_MAP:
@@ -310,8 +309,8 @@ def extract_shaft_tolerance(text: str) -> List[Dict[str, str]]:
             logger.info(f"Shaft tolerance '{spec}' detected (standalone → defaults to WIDTH)")
             found_tolerances.append({"spec": spec, "position": "width"})
         else:
-            # Default: h9 on width
-            found_tolerances.append({"spec": "h9", "position": "width"})
+            # NO DEFAULT: We only return tolerances explicitly found in the text.
+            pass
             
     return found_tolerances
 
@@ -721,7 +720,15 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             d_str = "X".join([str(int(v)) if float(v) == int(float(v)) else str(v) for v in [dims.get("width"), dims.get("height"), dims.get("length")] if v])
             f_str = "-".join([f["spec"] for f in config.get("features", []) if f.get("spec")])
             parts = ["PF", config.get("form"), d_str, config.get("material"), f_str, config.get("heat_treatment"), config.get("surface_treatment"), config.get("marking")]
-            item["article_name"] = "-".join([p for p in parts if p])
+            
+            base_name = "-".join([p for p in parts if p])
+            
+            # Preserve n.Zng / Drawing status
+            if any(term in text_to_scan.lower() for term in ["n.zng", "nzg", "drawing"]):
+                if not base_name.endswith("n.Zng."):
+                    base_name += "-n.Zng."
+            
+            item["article_name"] = base_name
 
             item["metadata"]["rule_confidence_score"] = calculate_confidence(item, text_to_scan)
 
