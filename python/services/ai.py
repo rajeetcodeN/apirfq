@@ -49,7 +49,9 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
       * **DIN NUMBERS**: Also extract material numbers like 1.4301, 1.4571, 1.7225, 1.0503, etc.
       * **KEYWORDS**: "VA", "V2A", "V4A", "STAINLESS" all refer to stainless steel.
       * **C45 VARIANTS**: Normalize ALL C45 variants (C45, C45K, C45C, C45E, C45R) and the number "1.0503" -> "C45+C".
-      * **SUFFIXES**: If a material has suffixes separated by '+' (e.g. "1.4057+QT800+2H", "1.4301+C700"), extract ONLY the base material (e.g. "1.4057", "1.4301"). Completely DROP the '+' suffixes. They are NOT treatments.
+      * **SUFFIXES**: Recognize suffixes separated by '+' (e.g. "1.4057+QT800", "1.4301+C700", "1.4462+2H", "C45+C") as being part of the material specification.
+      * **ACTION**: Extract ONLY the **base material** (e.g. "1.4057", "1.4462", "C45") and **DROP** the '+' and the suffix.
+      * **CRITICAL**: Do NOT move these recognized material suffixes into the heat_treatment or features fields. They must be identified as material-intrinsic and then discarded.
       * **IGNORE**: "P5K", "P85", "P100" (these are packaging/position codes, NOT materials).
     - dimensions: Object with `width`, `height`, `length` (numeric values).
       * **CRITICAL**: Prioritize dimensions found WITHIN the article string (e.g., "20X12X50" -> Length=50).
@@ -87,8 +89,11 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
         - **RIGHT EXAMPLE**: Item 1 "PF C 12x8x50 C60" -> no tolerance written -> features: [{type:"tolerance", spec:"h9", position:"width"}]
       * **CONSTRAINT**: Only extract M-codes between M1 and M21.
       * Example: "AS-8h6X7X36-M4-NZG" -> features: [{type:"tolerance",spec:"h6",position:"width"},{type:"thread",spec:"M4"},{type:"coating",spec:"NZG"}]
-    - heat_treatment: Extracted heat treatment spec (e.g., "geh.50-55HRC", "verg.90-100", "geh.56-60 0,3-0,5", "carbo.50-54", "nitriert", "salzbadnitriert", "N533"). Units like HRC/HV may be omitted.
+    - heat_treatment: Extracted heat treatment spec (e.g., "geh.50-55HRC", "verg.90-100", "carbo.50-54", "nitriert").
+      * **CRITICAL**: Ignore material-intrinsic suffixes like **+C**, **+A**, **+N**, **+QT**, or **+2H** here. They belong in the material field only.
+      * **DANGER**: Do NOT extract "n.Zng.", "n. Zng.", or "NZG" as a heat treatment.
     - surface_treatment: Extracted surface treatment spec (e.g., "poliert", "verzinkt", "Oberflächenbehandlung", "Oberfläche", "Oberfl."). **DO NOT EXTRACT** testing methods (like "Wirb.") or packaging units (like "VP100", "VP200").
+      * **DANGER**: Do NOT extract "n.Zng.", "n. Zng.", or "NZG" as a surface treatment.
     - marking: Extracted marking spec. **CRITICAL**: ONLY extract if it starts with "KZ", "KX", "SS", "HC", "T", "Ken.", "Kennz.", "gekennz.", "Kennzeich.", "gekennzeichnet", or "marking gek.". 
       * **DANGER**: DO NOT extract packaging/testing codes like "VP100", "VP200", "VP500", "NEU", "*NEUTEIL*", "QS APZ3.1", "PREN>40", "C700". They are NOT markings. If no explicitly labeled marking exists, RETURN NULL.
     - weight_per_unit: Weight per single unit if available.
@@ -103,6 +108,7 @@ article_name: **CONSTRUCT** this field *AFTER* extracting config. Use this stric
 - HeatTreatment: Any heat treatment found (e.g. "geh.50-55HRC"). Ignore if null.
 - SurfaceTreatment: Any surface treatment found (e.g. "verzinkt"). Ignore if null.
 - Marking: Any marking found (e.g. "KZ"). Ignore if null.
+- **n.Zng.**: If "n.Zng.", "n. Zng.", "NZG", or "Drawing" is mentioned in the text, APPEND it to the end of the article_name.
 - Do NOT include DIN/Standard in the article_name.
 *Example Result*: "PF-AS-8X7X45-C45+C-M4-geh.50-55HRC-verzinkt-KZ"
 
