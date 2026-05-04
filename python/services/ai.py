@@ -71,6 +71,7 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
         - "3,5x3x25" -> width=3.5, height=3, length=25
         - "6,35x6,35x38" -> width=6.35, height=6.35, length=38
         - "3,6x3,6x15" -> width=3.6, height=3.6, length=15
+      * **CRITICAL — ITEM ISOLATION**: Each line item is COMPLETELY INDEPENDENT. You must extract dimensions ONLY from the characters written in that specific item's text. NEVER copy, inherit, or infer dimensions from a different item, even if the items look similar.
       * Example: "B=10 H=8 T=16" -> {width: 10, height: 8, length: 16}.
     - features: List of features. Each feature is an object { "feature_type": "...", "spec": "...", "position": "..." }.
       * **CRITICAL**: Extract ALL technical specifications (M-codes, coatings, tolerances).

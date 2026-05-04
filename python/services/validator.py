@@ -575,9 +575,10 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
              if key not in dim_index: dim_index[key] = []
              dim_index[key].append(idx)
 
-    # 2. Sequential Mapping Fallback Pre-calc
+    # 2. Tracking and Sequential Mapping Fallback Pre-calc
     product_lines = [line for line in source_lines if re.search(r'\d+\s*[xX]\s*\d+', line) or "DIN" in line.upper() or "PF" in line.upper()]
     is_safe_to_sequence = len(product_lines) == len(items) and not pos_index
+    used_line_indices = set()
 
     # 3. Item Processing Loop
     for i, item in enumerate(items):
@@ -587,35 +588,51 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
             pos = str(item.get("pos", "")).strip()
             config = item.get("config", {})
             mat_id = config.get("material_id", "")
-            
             target_line_idx = -1
             
-            # FAST LOOKUPS
-            if mat_id in mat_id_index:
-                target_line_idx = mat_id_index[mat_id]
-            elif pos in pos_index:
-                target_line_idx = pos_index[pos]
-            elif config.get("dimensions"):
-                # Fuzzy match by width/height if only one such line exists in the doc
-                d = config["dimensions"]
-                dk = f"{d.get('width')}_{d.get('height')}"
-                if dk in dim_index and len(dim_index[dk]) == 1:
-                    target_line_idx = dim_index[dk][0]
+            # 1. Sequential Priority (If Safe)
+            if is_safe_to_sequence:
+                try:
+                    # Find the line in the original source_lines to get its true index
+                    target_line_idx = source_lines.index(product_lines[i])
+                except ValueError:
+                    target_line_idx = -1
             
-            if target_line_idx == -1 and is_safe_to_sequence:
-                # O(1) sequential access as last resort
-                target_line = product_lines[i]
-                target_line_idx = -2 # special flag
+            # 2. FAST LOOKUPS (If sequential failed or not safe)
+            if target_line_idx == -1 or target_line_idx in used_line_indices:
+                if mat_id in mat_id_index:
+                    target_line_idx = mat_id_index[mat_id]
+                elif pos in pos_index:
+                    target_line_idx = pos_index[pos]
+                elif config.get("dimensions"):
+                    # Fuzzy match by width/height
+                    d = config["dimensions"]
+                    dk = f"{d.get('width')}_{d.get('height')}"
+                    if dk in dim_index:
+                        # Find the first index for this dimension that hasn't been used yet
+                        for cand_idx in dim_index[dk]:
+                            if cand_idx not in used_line_indices:
+                                target_line_idx = cand_idx
+                                break
+            
+            # Track assigned line to prevent reuse
+            if target_line_idx >= 0:
+                used_line_indices.add(target_line_idx)
             
             # Context construction
             text_to_scan = ""
             if target_line_idx >= 0:
-                # Grab a window of context (up to 3 lines above/below)
-                start_context = max(0, target_line_idx - 2)
-                end_context = min(len(source_lines), target_line_idx + 10)
+                # Grab a window of context (focused on the target line)
+                if is_safe_to_sequence:
+                    # Very strict window if we are sequencing
+                    start_context = target_line_idx
+                    end_context = target_line_idx + 1
+                else:
+                    # Narrow window to avoid picking up features from unrelated lines
+                    start_context = max(0, target_line_idx - 1)
+                    end_context = min(len(source_lines), target_line_idx + 3)
+                
                 text_to_scan = "\n".join(source_lines[start_context:end_context])
-            elif target_line_idx == -2:
-                text_to_scan = target_line
             else:
                 # Fallback to article name if absolutely nothing else
                 text_to_scan = item.get("article_name", "")
@@ -686,10 +703,12 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                          break
 
             # Treatments (Override AI)
-            st = extract_surface_treatment(text_to_scan)
+            target_line = source_lines[target_line_idx] if target_line_idx >= 0 else ""
+            
+            st = extract_surface_treatment(target_line) or extract_surface_treatment(text_to_scan)
             config["surface_treatment"] = st
             
-            ht = extract_heat_treatment(text_to_scan)
+            ht = extract_heat_treatment(target_line) or extract_heat_treatment(text_to_scan)
             config["heat_treatment"] = ht
 
             # --- DANGER CLEANUP: Purge duplicate "coating" features if they match treatments ---
