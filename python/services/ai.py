@@ -49,9 +49,9 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
       * **DIN NUMBERS**: Also extract material numbers like 1.4301, 1.4571, 1.7225, 1.0503, etc.
       * **KEYWORDS**: "VA", "V2A", "V4A", "STAINLESS" all refer to stainless steel.
       * **C45 VARIANTS**: Normalize ALL C45 variants (C45, C45K, C45C, C45E, C45R) and the number "1.0503" -> "C45+C".
-      * **SUFFIXES**: Recognize suffixes separated by '+' (e.g. "1.4057+QT", "1.7227+C", "1.4462+2H", "C45+C") as being part of the material specification.
+      * **SUFFIXES**: Recognize suffixes separated by '+' (e.g. "1.4057+QT", "1.7227+C", "1.4462+2H", "C45+C", "1.4057+QT800", "1.4313+QT", "1.4313+QT780", "1.4571+C700") as being part of the material specification.
       * **ACTION**: Extract ONLY the **base material** (e.g. "1.4057", "1.4462", "C45") and **DROP** the '+' and the suffix.
-      * **CRITICAL**: Do NOT move these recognized material suffixes into the heat_treatment or features fields. Specifically, do NOT turn **+C** into a coating or **+2H** into a tolerance (H2).
+      * **CRITICAL**: Do NOT move these recognized material suffixes into the heat_treatment or features fields. Specifically, do NOT turn **+C**, **+C700**, **+QT**, **+QT800**, or **+QT780** into a coating, feature, or heat treatment, and do NOT turn **+2H** into a tolerance (H2).
       * **IGNORE**: "P5K", "P85", "P100" (these are packaging/position codes, NOT materials).
     - dimensions: Object with `width`, `height`, `length` (numeric values).
       * **CRITICAL**: Prioritize dimensions found WITHIN the article string (e.g., "20X12X50" -> Length=50).
@@ -82,6 +82,7 @@ config: **EXTRACT THIS FIRST**. A nested object containing technical specificati
         - Shaft tolerances (h6, h7, h8) -> type "tolerance" with "position" field
         - NZG (Nutenzugabe/groove allowance) -> type "coating"
         - **CRITICAL**: Do NOT extract "n.Zng.", "NZG", or "Drawing" as a feature. They are NOT technical features or coatings.
+        - **CRITICAL**: Do NOT extract "C" or "+C" as a coating feature. Example: "-PF D 8x7x20 C45 +C 100pc" -> The "+C" belongs to the material "C45", it is NOT a coating!
       * **SHAFT TOLERANCE (h6/h7/h8/h9)**: Extract the shaft tolerance and identify WHICH dimension it applies to.
         - You may find MULTIPLE tolerances in one string (e.g. "8h8x7h8x30" -> h8 on width, h8 on height). Extract BOTH if present.
         There are 5 possible formats:

@@ -722,6 +722,9 @@ def validate_and_fix_items(items: List[Dict[str, Any]], native_text: str, ocr_te
                          continue
                     if st and spec in str(st).lower():
                          continue
+                    # Purge '+C' or 'C' hallucinated from material suffixes
+                    if spec in ["c", "+c", "c700", "+c700", "qt", "+qt", "qt800", "+qt800", "qt780", "+qt780"]:
+                         continue
                     final_features.append(feat)
                 config["features"] = final_features
 
